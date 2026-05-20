@@ -10,7 +10,8 @@
     "esModuleInterop":  true,
     "skipLibCheck":     true,
     "resolveJsonModule": true,
-    "sourceMap":        true
+    "sourceMap":        true,
+    "isolatedModules":  true
   },
   "include": ["srv/**/*", "db/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist", "gen"]
