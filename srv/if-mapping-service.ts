@@ -3,6 +3,7 @@ import { HanaRepository } from './repository/hana-repository.js';
 import { AiCoreClient } from './ai/aicore-client.js';
 import { promptManager } from './ai/prompt-manager.js';
 import { runMatching, OrchestratorDeps } from './matching/orchestrator.js';
+import type { InterfaceFieldInput } from './matching/step1-custom-fields.js';
 import { buildRequestConfig } from './utils/config.js';
 import { AppError } from './utils/errors.js';
 import { log } from './utils/logger.js';
@@ -17,13 +18,17 @@ cds.on('bootstrap', async () => {
   log.info('Service bootstrapped');
 });
 
+cds.on('shutdown', async () => {
+  await hana.disconnect();
+});
+
 module.exports = class IfMappingService extends cds.ApplicationService {
   async init() {
     await super.init();
 
     this.on('match', async (req) => {
       const { fields, provider, language } = req.data as {
-        fields:    { sourceTable: string; sourceField: string; sourceDesc: string; rowIndex: number }[];
+        fields:    InterfaceFieldInput[];
         provider?: string;
         language?: string;
       };

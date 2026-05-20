@@ -1,3 +1,23 @@
+export async function runInBatches<T, R>(
+  items:       T[],
+  batchSize:   number,
+  concurrency: number,
+  fn:          (batch: T[]) => Promise<R>
+): Promise<R[]> {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    batches.push(items.slice(i, i + batchSize));
+  }
+
+  const results: R[] = [];
+  for (let i = 0; i < batches.length; i += concurrency) {
+    const chunk = batches.slice(i, i + concurrency);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
+
 import type { HanaRepository } from '../repository/hana-repository.js';
 import type { AiCoreClient } from '../ai/aicore-client.js';
 import type { PromptManager } from '../ai/prompt-manager.js';
