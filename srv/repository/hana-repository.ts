@@ -112,18 +112,34 @@ export class HanaRepository {
   }
 
   async getExactCustomField(
-    sourceTable: string,
-    sourceField: string
+    sourceField: string,
+    sourceTable?: string
   ): Promise<CustomField | null> {
-    const sql = `
-      SELECT ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
-             TARGETTABLE, TARGETFIELD, TARGETDESC, NOTES, ISACTIVE
-      FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
-      WHERE ISACTIVE = 1
-        AND UPPER(SOURCETABLE) = UPPER(?)
-        AND UPPER(SOURCEFIELD) = UPPER(?)
-      LIMIT 1`;
-    const rows = await this.conn.exec(sql, [sourceTable, sourceField]) as Record<string, unknown>[];
+    let sql: string;
+    let params: unknown[];
+
+    if (sourceTable) {
+      sql = `
+        SELECT ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
+               TARGETTABLE, TARGETFIELD, TARGETDESC, NOTES, ISACTIVE
+        FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
+        WHERE ISACTIVE = 1
+          AND UPPER(SOURCETABLE) = UPPER(?)
+          AND UPPER(SOURCEFIELD) = UPPER(?)
+        LIMIT 1`;
+      params = [sourceTable, sourceField];
+    } else {
+      sql = `
+        SELECT ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
+               TARGETTABLE, TARGETFIELD, TARGETDESC, NOTES, ISACTIVE
+        FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
+        WHERE ISACTIVE = 1
+          AND UPPER(SOURCEFIELD) = UPPER(?)
+        LIMIT 1`;
+      params = [sourceField];
+    }
+
+    const rows = await this.conn.exec(sql, params) as Record<string, unknown>[];
     return rows.length > 0 ? mapCustomField(rows[0]) : null;
   }
 

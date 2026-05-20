@@ -61,7 +61,7 @@ export async function runStep1(
   const unmatched: InterfaceFieldInput[] = [];
 
   for (const field of fields) {
-    const exact = await hana.getExactCustomField(field.fieldName, field.fieldName);
+    const exact = await hana.getExactCustomField(field.fieldName);
     if (exact) {
       matched.push(toMatchedResult(field, exact, 'exact', 1.0));
     } else {
