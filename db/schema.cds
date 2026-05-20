@@ -45,7 +45,7 @@ entity PromptTemplates : cuid {
     content    : LargeString    not null;
     version    : Integer        default 1;
     isActive   : Boolean        default true;
-    updatedAt  : Timestamp      @cds.on.update: $now;
+    updatedAt  : Timestamp      @cds.on.insert: $now  @cds.on.update: $now;
 }
 
 entity TokenLogs : cuid {

@@ -11,7 +11,8 @@
     "skipLibCheck":     true,
     "resolveJsonModule": true,
     "sourceMap":        true,
-    "isolatedModules":  true
+    "isolatedModules":  true,
+    "types":            ["@cap-js/cds-types", "node", "jest"]
   },
   "include": ["srv/**/*", "db/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist", "gen"]
