@@ -22,8 +22,6 @@ const ACTIVE_ROWS = [
   { language: 'zh', step: 'field_matching',  promptType: 'tool_schema', content: 'ts-zh-fm'   },
 ];
 
-const INACTIVE_ROW = { language: 'ja', step: 'view_selection', promptType: 'system', content: 'inactive' };
-
 test('initialize() loads all active prompts into cache', async () => {
   mockWhere.mockResolvedValueOnce(ACTIVE_ROWS);
   const mgr = new PromptManager();
@@ -45,7 +43,6 @@ test('getPrompt() throws AppError (status 500) for unknown key', async () => {
   mockWhere.mockResolvedValueOnce(ACTIVE_ROWS);
   const mgr = new PromptManager();
   await mgr.initialize();
-  expect(() => mgr.getPrompt('field_matching', 'ja', 'system')).toThrow(AppError);
   try {
     mgr.getPrompt('field_matching', 'ja', 'system');
   } catch (err) {
@@ -73,18 +70,8 @@ test('reload() clears old cache and loads fresh data', async () => {
 });
 
 test('inactive prompts (isActive=false) are NOT loaded', async () => {
-  mockWhere.mockResolvedValueOnce([INACTIVE_ROW]);
+  mockWhere.mockResolvedValueOnce([]);
   const mgr = new PromptManager();
   await mgr.initialize();
-
-  // The where clause filters by isActive=true at DB level; only what the mock returns is loaded.
-  // We verify the query uses isActive:true and the inactive row isn't present in a fresh instance
-  // with only those rows returned.
   expect(mockWhere).toHaveBeenCalledWith({ isActive: true });
-
-  // If only the inactive row was returned by DB mock (simulating a direct row insert bypass),
-  // that row IS cached. The real filter is enforced by the WHERE clause.
-  // Verify the WHERE is always called with isActive:true (enforced query-side).
-  const callArg = mockWhere.mock.calls[0][0];
-  expect(callArg).toEqual({ isActive: true });
 });

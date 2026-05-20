@@ -1,4 +1,3 @@
-import cds from '@sap/cds';
 import { Errors } from '../utils/errors.js';
 import { log } from '../utils/logger.js';
 
@@ -33,7 +32,6 @@ export class PromptManager {
   }
 
   async reload(): Promise<void> {
-    this.cache.clear();
     await this.initialize();
   }
 }
