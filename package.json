@@ -1,0 +1,38 @@
+{
+  "name": "if-mapping-cap",
+  "version": "0.1.0",
+  "description": "SAP interface field mapping service built with CAP Node.js/TypeScript",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start":      "cds-serve",
+    "dev":        "cds watch",
+    "build":      "cds build && tsc --noEmit",
+    "test":       "jest --runInBand",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "@sap/cds":         "^8",
+    "@sap/hana-client": "^2.21"
+  },
+  "devDependencies": {
+    "@sap/cds-dk":  "^8",
+    "@types/node":  "^20",
+    "@types/jest":  "^29",
+    "jest":         "^29",
+    "ts-jest":      "^29",
+    "typescript":   "^5"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": ["<rootDir>/tests"]
+  },
+  "cds": {
+    "requires": {
+      "db": {
+        "kind": "sqlite",
+        "credentials": { "database": ":memory:" }
+      }
+    }
+  }
+}

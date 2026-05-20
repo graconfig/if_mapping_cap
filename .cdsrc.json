@@ -1,0 +1,17 @@
+{
+  "requires": {
+    "db": {
+      "[production]": {
+        "kind": "hana",
+        "deploy-format": "hdbtable"
+      },
+      "[development]": {
+        "kind": "sqlite",
+        "credentials": { "database": "db/dev.db" }
+      }
+    }
+  },
+  "features": {
+    "typescript": true
+  }
+}
