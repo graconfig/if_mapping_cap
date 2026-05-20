@@ -8,6 +8,10 @@
       "[development]": {
         "kind": "sqlite",
         "credentials": { "database": "db/dev.db" }
+      },
+      "[test]": {
+        "kind": "sqlite",
+        "credentials": { "database": ":memory:" }
       }
     }
   },

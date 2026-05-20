@@ -26,13 +26,5 @@
     "preset": "ts-jest",
     "testEnvironment": "node",
     "roots": ["<rootDir>/tests"]
-  },
-  "cds": {
-    "requires": {
-      "db": {
-        "kind": "sqlite",
-        "credentials": { "database": ":memory:" }
-      }
-    }
   }
 }

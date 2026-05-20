@@ -2,5 +2,8 @@ node_modules/
 dist/
 gen/
 db/dev.db
+*.db-journal
 .env
 *.env.local
+*.log
+.cds-services.json
