@@ -16,8 +16,10 @@ const aiCore = new AiCoreClient();
 const deps: OrchestratorDeps = { hana, aiCore, prompts: promptManager };
 
 // SSE log stream — clients subscribe with ?correlationId=<id>
-cds.on('bootstrap', (app: any) => {
-  app.get('/if-mapping/logStream', (req: ExpressRequest, res: ExpressResponse) => {
+// Uses 'served' (not 'bootstrap') because service files are loaded after bootstrap fires.
+cds.on('served', () => {
+  const app = (cds as any).app;
+  app.get('/log-stream', (req: ExpressRequest, res: ExpressResponse) => {
     const correlationId = req.query['correlationId'] as string | undefined;
     if (!correlationId) {
       res.status(400).end('correlationId required');
