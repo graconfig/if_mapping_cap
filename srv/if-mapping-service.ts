@@ -1,21 +1,39 @@
 import cds from '@sap/cds';
+import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { HanaRepository } from './repository/hana-repository.js';
 import { AiCoreClient } from './ai/aicore-client.js';
 import { promptManager } from './ai/prompt-manager.js';
 import { runMatching, OrchestratorDeps } from './matching/orchestrator.js';
-import type { InterfaceFieldInput } from './matching/step1-custom-fields.js';
+import type { InterfaceFieldInput } from '../@cds-models/index.js';
 import { buildRequestConfig } from './utils/config.js';
 import { AppError } from './utils/errors.js';
 import { log } from './utils/logger.js';
+import { logBus } from './utils/log-bus.js';
+import type { LogEntry } from './utils/log-bus.js';
 
 const hana   = new HanaRepository();
 const aiCore = new AiCoreClient();
 const deps: OrchestratorDeps = { hana, aiCore, prompts: promptManager };
 
-cds.on('bootstrap', async () => {
-  await hana.connect();
-  await promptManager.initialize();
-  log.info('Service bootstrapped');
+// SSE log stream — clients subscribe with ?correlationId=<id>
+cds.on('bootstrap', (app: any) => {
+  app.get('/if-mapping/logStream', (req: ExpressRequest, res: ExpressResponse) => {
+    const correlationId = req.query['correlationId'] as string | undefined;
+    if (!correlationId) {
+      res.status(400).end('correlationId required');
+      return;
+    }
+    res.setHeader('Content-Type',  'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection',    'keep-alive');
+    res.flushHeaders();
+
+    const onLog = (entry: LogEntry) => {
+      res.write(`data: ${JSON.stringify(entry)}\n\n`);
+    };
+    logBus.on(correlationId, onLog);
+    req.on('close', () => logBus.off(correlationId, onLog));
+  });
 });
 
 cds.on('shutdown', async () => {
@@ -25,6 +43,9 @@ cds.on('shutdown', async () => {
 module.exports = class IfMappingService extends cds.ApplicationService {
   async init() {
     await super.init();
+    await hana.connect();
+    await promptManager.initialize();
+    log.info('Service bootstrapped');
 
     this.on('match', async (req) => {
       const { fields, provider, language } = req.data as {

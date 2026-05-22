@@ -1,5 +1,21 @@
 import hana from '@sap/hana-client';
 
+export interface TerminologyMapping {
+  sourceTerm:       string;
+  sourceTermAlias:  string;
+  sourceContext:    string;
+  targetTerm:       string;
+  targetTermAlias:  string;
+  sapModule:        string;
+  sapTransaction:   string;
+  sapObjectType:    string;
+  sapTechnicalName: string;
+  category:         string;
+  domainArea:       string;
+  priority:         string;
+  confidence:       string;
+}
+
 export interface CustomField {
   id:          string;
   ifName:      string;
@@ -9,6 +25,12 @@ export interface CustomField {
   targetTable: string;
   targetField: string;
   targetDesc:  string;
+  dataType:    string;
+  lengthTotal: string;
+  lengthDec:   string;
+  keyFlag:     string;
+  obligatory:  string;
+  sampleValue: string;
   notes:       string;
   score?:      number;
 }
@@ -71,21 +93,31 @@ function resolveHanaConfig(): Record<string, unknown> {
   };
 }
 
-function toVectorString(embedding: number[]): string {
-  return `[${embedding.join(',')}]`;
+function nullOrEq(col: string, val: string): string {
+  const clean = val.replace(/'/g, "''");
+  if (!clean || clean.trim() === '' || clean.trim() === '-') {
+    return `("${col}" IS NULL OR "${col}" = '')`;
+  }
+  return `"${col}" = '${clean}'`;
 }
 
 function mapCustomField(row: Record<string, unknown>): CustomField {
   return {
-    id:          String(row['ID']          ?? ''),
-    ifName:      String(row['IFNAME']      ?? ''),
-    sourceTable: String(row['SOURCETABLE'] ?? ''),
-    sourceField: String(row['SOURCEFIELD'] ?? ''),
-    sourceDesc:  String(row['SOURCEDESC']  ?? ''),
-    targetTable: String(row['TARGETTABLE'] ?? ''),
-    targetField: String(row['TARGETFIELD'] ?? ''),
-    targetDesc:  String(row['TARGETDESC']  ?? ''),
-    notes:       String(row['NOTES']       ?? ''),
+    id:          String(row['ID']            ?? ''),
+    ifName:      String(row['IFNAME']        ?? ''),
+    sourceTable: String(row['SOURCETABLE']   ?? ''),
+    sourceField: String(row['SOURCEFIELD']   ?? ''),
+    sourceDesc:  String(row['SOURCEDESC']    ?? ''),
+    targetTable: String(row['TARGETTABLE']   ?? ''),
+    targetField: String(row['TARGETFIELD']   ?? ''),
+    targetDesc:  String(row['TARGETDESC']    ?? ''),
+    dataType:    String(row['TARGETTYPE']    ?? ''),
+    lengthTotal: row['TARGETLENGTH']   != null ? String(row['TARGETLENGTH'])   : '',
+    lengthDec:   row['TARGETDECIMALS'] != null ? String(row['TARGETDECIMALS']) : '',
+    keyFlag:     String(row['KEYFLAG']       ?? ''),
+    obligatory:  String(row['OBLIGATORY']    ?? ''),
+    sampleValue: String(row['ALLOWEDVALUES'] ?? ''),
+    notes:       String(row['NOTES']         ?? ''),
     score:       row['SCORE'] != null ? Number(row['SCORE']) : undefined,
   };
 }
@@ -112,74 +144,116 @@ export class HanaRepository {
   }
 
   async getExactCustomField(
-    sourceField: string,
-    sourceTable?: string
-  ): Promise<CustomField | null> {
-    let sql: string;
-    let params: unknown[];
-
-    if (sourceTable) {
-      sql = `
-        SELECT ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
-               TARGETTABLE, TARGETFIELD, TARGETDESC, NOTES, ISACTIVE
-        FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
-        WHERE ISACTIVE = 1
-          AND UPPER(SOURCETABLE) = UPPER(?)
-          AND UPPER(SOURCEFIELD) = UPPER(?)
-        LIMIT 1`;
-      params = [sourceTable, sourceField];
-    } else {
-      sql = `
-        SELECT ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
-               TARGETTABLE, TARGETFIELD, TARGETDESC, NOTES, ISACTIVE
-        FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
-        WHERE ISACTIVE = 1
-          AND UPPER(SOURCEFIELD) = UPPER(?)
-        LIMIT 1`;
-      params = [sourceField];
-    }
-
-    const rows = await this.conn.exec(sql, params) as Record<string, unknown>[];
-    return rows.length > 0 ? mapCustomField(rows[0]) : null;
+    sourceTable: string,
+    sourceField: string
+  ): Promise<{ result: CustomField | null; isMultiple: boolean }> {
+    const cols = `ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
+               TARGETTABLE, TARGETFIELD, TARGETDESC,
+               TARGETTYPE, TARGETLENGTH, TARGETDECIMALS,
+               KEYFLAG, OBLIGATORY, ALLOWEDVALUES, NOTES`;
+    const tableCond = nullOrEq('SOURCETABLE', sourceTable);
+    const fieldCond = nullOrEq('SOURCEFIELD',  sourceField);
+    const sql = `
+      SELECT TOP 2 ${cols}
+      FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
+      WHERE ISACTIVE = 0
+        AND ${tableCond}
+        AND ${fieldCond}`;
+    const rows = await this.conn.exec(sql, []) as Record<string, unknown>[];
+    if (rows.length === 0)  return { result: null,               isMultiple: false };
+    if (rows.length > 1)    return { result: null,               isMultiple: true  };
+    return                         { result: mapCustomField(rows[0]), isMultiple: false };
   }
 
   async getVectorCustomFields(
-    embedding: number[],
-    threshold = 0.75,
-    limit = 5
+    queryText:    string,
+    threshold   = 0.75,
+    limit       = 5,
+    sourceTable?: string,
+    sourceField?: string
   ): Promise<CustomField[]> {
-    const vec = toVectorString(embedding);
+    const cols = `ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
+            TARGETTABLE, TARGETFIELD, TARGETDESC,
+            TARGETTYPE, TARGETLENGTH, TARGETDECIMALS,
+            KEYFLAG, OBLIGATORY, ALLOWEDVALUES, NOTES`;
+    let scopeFilter = '';
+    if (sourceTable !== undefined) scopeFilter += ` AND ${nullOrEq('SOURCETABLE', sourceTable)}`;
+    if (sourceField !== undefined) scopeFilter += ` AND ${nullOrEq('SOURCEFIELD', sourceField)}`;
     const sql = `
-      SELECT TOP ${limit}
-        ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
-        TARGETTABLE, TARGETFIELD, TARGETDESC, NOTES,
-        COSINE_SIMILARITY(EMBEDDING, TO_REAL_VECTOR(?)) AS SCORE
-      FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
-      WHERE ISACTIVE = 1
-        AND COSINE_SIMILARITY(EMBEDDING, TO_REAL_VECTOR(?)) > ?
+      SELECT TOP ${limit} ${cols}, SCORE
+      FROM (
+        SELECT ${cols},
+          COSINE_SIMILARITY(VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715'), EMBEDDINGS) AS SCORE
+        FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
+        WHERE ISACTIVE = 0${scopeFilter}
+      ) AS T
+      WHERE SCORE > ?
       ORDER BY SCORE DESC`;
-    const rows = await this.conn.exec(sql, [vec, vec, threshold]) as Record<string, unknown>[];
+    const rows = await this.conn.exec(sql, [queryText, threshold]) as Record<string, unknown>[];
     return rows.map(mapCustomField);
   }
 
   async getRelevantViews(
-    embedding: number[],
-    limit = 20
+    queryText: string,
+    limit = 1
   ): Promise<CdsView[]> {
-    const vec = toVectorString(embedding);
     const sql = `
       SELECT TOP ${limit}
-        ID, VIEWNAME, CATEGORY, DESCRIPTION,
-        COSINE_SIMILARITY(EMBEDDING, TO_REAL_VECTOR(?)) AS SCORE
-      FROM "${this.cdsSchema}"."PWC_HAND_AI2REPORT_DEV_CDSVIEWS"
+        ID, SCENARIO, DESCRIPTION, VIEWCATEGORY,
+        COSINE_SIMILARITY(VECTOR_EMBEDDING(?, 'QUERY', 'SAP_NEB.20240715'), EMBEDDINGS) AS SCORE
+      FROM "${this.cdsSchema}"."PWC_HAND_AI2REPORT_DEV_BUSINESSSCENARIOS"
       ORDER BY SCORE DESC`;
-    const rows = await this.conn.exec(sql, [vec]) as Record<string, unknown>[];
+    const rows = await this.conn.exec(sql, [queryText]) as Record<string, unknown>[];
     return rows.map(row => ({
-      id:          String(row['ID']          ?? ''),
-      viewName:    String(row['VIEWNAME']    ?? ''),
-      category:    String(row['CATEGORY']    ?? ''),
-      description: String(row['DESCRIPTION'] ?? ''),
+      id:          String(row['ID']           ?? ''),
+      viewName:    String(row['SCENARIO']     ?? ''),
+      category:    String(row['VIEWCATEGORY'] ?? ''),
+      description: String(row['DESCRIPTION']  ?? ''),
       score:       row['SCORE'] != null ? Number(row['SCORE']) : undefined,
+    }));
+  }
+
+  async getViewsByCategory(category: string): Promise<CdsView[]> {
+    const categories = category.split('/').filter(c => c.trim());
+    if (categories.length === 0) return [];
+    const placeholders = categories.map(() => '?').join(',');
+    const sql = `
+      SELECT VIEWNAME, VIEWDESC, VIEWCATEGORY
+      FROM "${this.cdsSchema}"."PWC_HAND_AI2REPORT_DEV_CDSVIEWS"
+      WHERE VIEWCATEGORY IN (${placeholders})
+        AND ISACTIVE = 'true'`;
+    const rows = await this.conn.exec(sql, categories) as Record<string, unknown>[];
+    return rows.map(row => ({
+      id:          '',
+      viewName:    String(row['VIEWNAME']     ?? ''),
+      category:    String(row['VIEWCATEGORY'] ?? ''),
+      description: String(row['VIEWDESC']     ?? ''),
+    }));
+  }
+
+  async getTerminologyMappings(): Promise<TerminologyMapping[]> {
+    const sql = `
+      SELECT SOURCETERM, SOURCETERMALIAS, SOURCECONTEXT,
+             TARGETTERM, TARGETTERMALIAS,
+             SAPMODULE, SAPTRANSACTION, SAPOBJECTTYPE, SAPTECHNICALNAME,
+             CATEGORY, DOMAINAREA, PRIORITY, CONFIDENCE
+      FROM "${this.cdsSchema}"."PWC_HAND_AI2REPORT_DEV_TERMINOLOGYMAPPING"
+      WHERE STATUS = 'ACTIVE'`;
+    const rows = await this.conn.exec(sql, []) as Record<string, unknown>[];
+    return rows.map(row => ({
+      sourceTerm:       String(row['SOURCETERM']       ?? ''),
+      sourceTermAlias:  String(row['SOURCETERMALIAS']  ?? ''),
+      sourceContext:    String(row['SOURCECONTEXT']    ?? ''),
+      targetTerm:       String(row['TARGETTERM']       ?? ''),
+      targetTermAlias:  String(row['TARGETTERMALIAS']  ?? ''),
+      sapModule:        String(row['SAPMODULE']        ?? ''),
+      sapTransaction:   String(row['SAPTRANSACTION']   ?? ''),
+      sapObjectType:    String(row['SAPOBJECTTYPE']    ?? ''),
+      sapTechnicalName: String(row['SAPTECHNICALNAME'] ?? ''),
+      category:         String(row['CATEGORY']         ?? ''),
+      domainArea:       String(row['DOMAINAREA']       ?? ''),
+      priority:         String(row['PRIORITY']         ?? ''),
+      confidence:       String(row['CONFIDENCE']       ?? ''),
     }));
   }
 
@@ -187,17 +261,37 @@ export class HanaRepository {
     if (viewNames.length === 0) return [];
     const placeholders = viewNames.map(() => '?').join(',');
     const sql = `
-      SELECT VIEWNAME, FIELDID, TABLEID, DATATYPE, FIELDTEXT
+      SELECT TABLENAME, CONTENT
       FROM "${this.cdsSchema}"."PWC_HAND_AI2REPORT_DEV_VIEWFIELDS"
-      WHERE VIEWNAME IN (${placeholders})`;
+      WHERE TABLENAME IN (${placeholders})
+        AND LANGU = 'ja'`;
     const rows = await this.conn.exec(sql, viewNames) as Record<string, unknown>[];
-    return rows.map(row => ({
-      viewName:  String(row['VIEWNAME']  ?? ''),
-      fieldId:   String(row['FIELDID']   ?? ''),
-      tableId:   String(row['TABLEID']   ?? ''),
-      dataType:  String(row['DATATYPE']  ?? ''),
-      fieldText: String(row['FIELDTEXT'] ?? ''),
-    }));
+
+    const result: ViewField[] = [];
+    for (const row of rows) {
+      const tableName  = String(row['TABLENAME'] ?? '');
+      const contentStr = String(row['CONTENT']   ?? '');
+      if (!contentStr) continue;
+      try {
+        const start = contentStr.indexOf('[[');
+        const end   = contentStr.lastIndexOf(']]');
+        if (start === -1 || end === -1) continue;
+        const parsed = JSON.parse(contentStr.slice(start, end + 2)) as unknown[][];
+        for (const entry of parsed) {
+          if (!Array.isArray(entry) || entry.length < 5) continue;
+          result.push({
+            viewName:  tableName,
+            fieldId:   String(entry[0] ?? ''),
+            tableId:   tableName,
+            dataType:  String(entry[4] ?? ''),
+            fieldText: String(entry[2] ?? ''),
+          });
+        }
+      } catch {
+        // skip rows with malformed CONTENT
+      }
+    }
+    return result;
   }
 
   async upsertCustomFields(records: CustomFieldRecord[]): Promise<UploadResult> {

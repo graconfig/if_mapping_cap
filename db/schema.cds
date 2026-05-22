@@ -22,6 +22,25 @@ context external {
   }
 
   @cds.persistence.exists
+  entity TerminologyMapping {
+    key ID              : String(36);
+        sourceTerm      : String(200);
+        sourceTermAlias : String(200);
+        sourceContext   : String(500);
+        targetTerm      : String(200);
+        targetTermAlias : String(200);
+        sapModule       : String(100);
+        sapTransaction  : String(100);
+        sapObjectType   : String(100);
+        sapTechnicalName: String(200);
+        category        : String(100);
+        domainArea      : String(100);
+        priority        : String(20);
+        confidence      : String(20);
+        status          : String(20);
+  }
+
+  @cds.persistence.exists
   entity CustomFields {
     key ID          : String(36);
         ifName      : String(200);
@@ -68,6 +87,15 @@ type InterfaceFieldInput {
     fieldText   : String(500);
     sampleValue : String(500);
     remark      : String(500);
+    tableId     : String(200);
+    fieldId     : String(200);
+    keyFlag     : String(10);
+    obligatory  : String(10);
+    dataType    : String(30);
+    lengthTotal : String(10);
+    lengthDec   : String(10);
+    isAppend    : String(10);
+    verify      : String(10);
 }
 
 type MatchedFieldResult {
@@ -80,6 +108,8 @@ type MatchedFieldResult {
     matchSource : String(20);
     notes       : String(1000);
     verified    : Boolean;
+    obligatory  : String(1);
+    sampleValue : String(500);
 }
 
 type CustomFieldUploadInput {

@@ -1,9 +1,14 @@
 node_modules/
+@cds-models/
 dist/
 gen/
 db/dev.db
+db/data
 *.db-journal
 .env
 *.env.local
 *.log
 .cds-services.json
+.superpowers
+docs
+db.sqlite

@@ -1,7 +1,7 @@
-import type { InterfaceFieldInput, MatchedFieldResult } from './step1-custom-fields.js';
-import type { HanaRepository, ViewField } from '../repository/hana-repository.js';
+import type { InterfaceFieldInput, MatchedFieldResult } from '../../@cds-models/index.js';
 import type { AiCoreClient } from '../ai/aicore-client.js';
 import type { PromptManager } from '../ai/prompt-manager.js';
+import type { HanaRepository, ViewField } from '../repository/hana-repository.js';
 import type { RequestConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
 
@@ -36,29 +36,33 @@ async function runWithConcurrency<T>(
 }
 
 interface LlmMatchResult {
-  rowIndex: number;
-  tableId:  string;
-  fieldId:  string;
-  fieldText?: string;
-  score?:    number;
-  notes?:    string;
+  row_index:    number;
+  table_id:     string;
+  field_id:     string;
+  field_desc?:  string;
+  data_type?:   string;
+  match?:       string;
+  obligatory?:  string;
+  sample_value?: string;
+  notes?:       string;
 }
 
 export async function runStep3(
-  unmatched:      InterfaceFieldInput[],
-  selectedViews:  string[],
-  hana:           HanaRepository,
-  aiCore:         AiCoreClient,
-  prompts:        PromptManager,
-  config:         RequestConfig,
-  correlationId?: string
+  unmatched:        InterfaceFieldInput[],
+  selectedViews:    string[],
+  hana:             HanaRepository,
+  aiCore:           AiCoreClient,
+  prompts:          PromptManager,
+  config:           RequestConfig,
+  correlationId?:   string,
+  terminologyText?: string
 ): Promise<Step3Result> {
   const viewFields: ViewField[] = await hana.getViewFields(selectedViews);
 
   if (viewFields.length === 0) {
     log.warn('Step3: no view fields available', { correlationId });
     const errorResults: MatchedFieldResult[] = unmatched.map(f => ({
-      rowIndex:    f.rowIndex,
+      rowIndex:    f.rowIndex ?? 0,
       tableId:     '',
       fieldId:     '',
       dataType:    '',
@@ -82,21 +86,30 @@ export async function runStep3(
     batches.push(unmatched.slice(i, i + batchSize));
   }
 
-  const systemPrompt  = prompts.getPrompt('field_matching', config.language, 'system');
   const userTemplate  = prompts.getPrompt('field_matching', config.language, 'user');
   const toolSchemaRaw = prompts.getPrompt('field_matching', config.language, 'tool_schema');
   const toolSchema    = JSON.parse(toolSchemaRaw);
 
   const tasks = batches.map((batch, batchIndex) => async (): Promise<MatchedFieldResult[]> => {
     try {
+      const fieldsText = batch
+        .map(f => `${f.rowIndex};${f.fieldName};${f.fieldText};;;;`)
+        .join('\n');
+      const contextText = viewFields
+        .map(vf => `${vf.tableId};${vf.fieldId};;${vf.fieldText};${vf.dataType};;`)
+        .join('\n');
+
       const userPrompt = fillTemplate(userTemplate, {
-        fields:     JSON.stringify(batch),
-        viewFields: JSON.stringify(viewFields),
+        fields:        fieldsText,
+        manual_fields: '',
+        context:       contextText,
+        context_count: String(viewFields.length),
+        match_number:  String(config.matchNumber),
+        terminology:   terminologyText ?? '',
       });
 
       const result = await aiCore.callWithTools(
         [
-          { role: 'user', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         [toolSchema],
@@ -104,18 +117,18 @@ export async function runStep3(
         config.llmModel
       );
 
-      const toolInput = result.toolInput as { results?: LlmMatchResult[] };
-      const llmResults: LlmMatchResult[] = toolInput.results ?? [];
+      const toolInput = result.toolInput as { review?: LlmMatchResult[] };
+      const llmResults: LlmMatchResult[] = toolInput.review ?? [];
 
       return llmResults.map(r => {
-        const vf = viewFieldIndex.get(`${r.tableId}::${r.fieldId}`);
+        const vf = viewFieldIndex.get(`${r.table_id}::${r.field_id}`);
         return {
-          rowIndex:    r.rowIndex,
-          tableId:     r.tableId,
-          fieldId:     r.fieldId,
-          dataType:    vf?.dataType ?? '',
-          fieldText:   r.fieldText ?? vf?.fieldText ?? '',
-          matchScore:  r.score ?? 0,
+          rowIndex:    r.row_index,
+          tableId:     r.table_id,
+          fieldId:     r.field_id,
+          dataType:    r.data_type ?? vf?.dataType ?? '',
+          fieldText:   r.field_desc ?? vf?.fieldText ?? '',
+          matchScore:  r.match ? parseFloat(r.match) / 100 : 0,
           matchSource: 'ai' as const,
           notes:       r.notes ?? '',
           verified:    false,
@@ -128,7 +141,7 @@ export async function runStep3(
         error: String(err),
       });
       return batch.map(f => ({
-        rowIndex:    f.rowIndex,
+        rowIndex:    f.rowIndex ?? 0,
         tableId:     '',
         fieldId:     '',
         dataType:    '',

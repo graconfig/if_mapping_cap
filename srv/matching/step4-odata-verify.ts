@@ -1,4 +1,4 @@
-import type { MatchedFieldResult } from './step1-custom-fields.js';
+import type { MatchedFieldResult } from '../../@cds-models/index.js';
 import type { RequestConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
 

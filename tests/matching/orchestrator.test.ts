@@ -1,6 +1,6 @@
 import { runMatching } from '../../srv/matching/orchestrator.js';
 import type { OrchestratorDeps } from '../../srv/matching/orchestrator.js';
-import type { InterfaceFieldInput, MatchedFieldResult } from '../../srv/matching/step1-custom-fields.js';
+import type { InterfaceFieldInput, MatchedFieldResult } from '../../@cds-models/index.js';
 import type { RequestConfig } from '../../srv/utils/config.js';
 import { log } from '../../srv/utils/logger.js';
 
@@ -61,8 +61,10 @@ function makeResult(rowIndex: number, source: MatchedFieldResult['matchSource'] 
   };
 }
 
+const mockGetTerminologyMappings = jest.fn().mockResolvedValue([]);
+
 const deps: OrchestratorDeps = {
-  hana:    {} as any,
+  hana:    { getTerminologyMappings: mockGetTerminologyMappings } as any,
   aiCore:  {} as any,
   prompts: {} as any,
 };
@@ -104,8 +106,8 @@ test('full pipeline — step1 matches some, step2+3 match rest, step4 verifies �
   const result = await runMatching(fields, config, deps, 'corr-full');
 
   expect(mockRunStep1).toHaveBeenCalledWith(fields, deps.hana, deps.aiCore, config, 'corr-full');
-  expect(mockRunStep2).toHaveBeenCalledWith(step1Unmatched, deps.hana, deps.aiCore, deps.prompts, config, 'corr-full');
-  expect(mockRunStep3).toHaveBeenCalledWith(step1Unmatched, ['VIEW_A', 'VIEW_B'], deps.hana, deps.aiCore, deps.prompts, config, 'corr-full');
+  expect(mockRunStep2).toHaveBeenCalledWith(step1Unmatched, deps.hana, deps.aiCore, deps.prompts, config, 'corr-full', '');
+  expect(mockRunStep3).toHaveBeenCalledWith(step1Unmatched, ['VIEW_A', 'VIEW_B'], deps.hana, deps.aiCore, deps.prompts, config, 'corr-full', '');
   expect(mockRunStep4).toHaveBeenCalledWith([...step1Matched, ...step3Matched], config, 'corr-full');
 
   expect(result).toHaveLength(3);
@@ -198,7 +200,8 @@ test('step2 returns empty views → step3 called with empty views, returns error
     deps.aiCore,
     deps.prompts,
     baseConfig,
-    'corr-empty-views'
+    'corr-empty-views',
+    ''
   );
 
   expect(result).toHaveLength(2);
@@ -234,8 +237,8 @@ test('correlationId is forwarded to all steps', async () => {
   await runMatching(fields, baseConfig, deps, 'my-corr-id');
 
   expect(mockRunStep1).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), 'my-corr-id');
-  expect(mockRunStep2).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), 'my-corr-id');
-  expect(mockRunStep3).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), 'my-corr-id');
+  expect(mockRunStep2).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), 'my-corr-id', expect.anything());
+  expect(mockRunStep3).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), 'my-corr-id', expect.anything());
 });
 
 test('step1 error propagates out of runMatching', async () => {

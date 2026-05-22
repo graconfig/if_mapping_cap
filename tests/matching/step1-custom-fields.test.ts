@@ -1,8 +1,6 @@
 import { runStep1 } from '../../srv/matching/step1-custom-fields.js';
-import type {
-  InterfaceFieldInput,
-  Step1Result,
-} from '../../srv/matching/step1-custom-fields.js';
+import type { InterfaceFieldInput } from '../../@cds-models/index.js';
+import type { Step1Result } from '../../srv/matching/step1-custom-fields.js';
 import type { HanaRepository, CustomField } from '../../srv/repository/hana-repository.js';
 import type { AiCoreClient } from '../../srv/ai/aicore-client.js';
 import type { RequestConfig } from '../../srv/utils/config.js';
@@ -36,6 +34,12 @@ function makeCustomField(overrides: Partial<CustomField> = {}): CustomField {
     targetTable: 'C_PurchaseOrderTP',
     targetField: 'PurchaseOrder',
     targetDesc:  'Purchase Order',
+    dataType:    '',
+    lengthTotal: '',
+    lengthDec:   '',
+    keyFlag:     '',
+    obligatory:  '',
+    sampleValue: '',
     notes:       'Verified mapping',
     score:       undefined,
     ...overrides,
@@ -43,20 +47,16 @@ function makeCustomField(overrides: Partial<CustomField> = {}): CustomField {
 }
 
 function makeMockHana(
-  exactResult:  CustomField | null,
+  exactResult:  { result: CustomField | null; isMultiple: boolean },
   vectorResult: CustomField[] = []
 ): jest.Mocked<Pick<HanaRepository, 'getExactCustomField' | 'getVectorCustomFields'>> {
   return {
-    getExactCustomField:  jest.fn().mockResolvedValue(exactResult),
+    getExactCustomField:   jest.fn().mockResolvedValue(exactResult),
     getVectorCustomFields: jest.fn().mockResolvedValue(vectorResult),
   } as any;
 }
 
-function makeMockAiCore(embeddings: number[][] = [[0.1, 0.2]]): jest.Mocked<Pick<AiCoreClient, 'generateEmbeddings'>> {
-  return {
-    generateEmbeddings: jest.fn().mockResolvedValue(embeddings),
-  } as any;
-}
+const noopAi = {} as jest.Mocked<AiCoreClient>;
 
 const defaultConfig: RequestConfig = {
   provider:        'claude',
@@ -71,12 +71,11 @@ const defaultConfig: RequestConfig = {
 };
 
 test('exact match found → field in matched[], matchSource=exact, score=1.0', async () => {
-  const field = makeField({ rowIndex: 1 });
+  const field = makeField({ rowIndex: 1, tableId: 'EKKO', fieldId: 'EBELN' });
   const cf    = makeCustomField();
-  const hana  = makeMockHana(cf);
-  const ai    = makeMockAiCore();
+  const hana  = makeMockHana({ result: cf, isMultiple: false });
 
-  const result: Step1Result = await runStep1([field], hana as any, ai as any, defaultConfig);
+  const result: Step1Result = await runStep1([field], hana as any, noopAi, defaultConfig);
 
   expect(result.matched).toHaveLength(1);
   expect(result.unmatched).toHaveLength(0);
@@ -86,64 +85,97 @@ test('exact match found → field in matched[], matchSource=exact, score=1.0', a
   expect(result.matched[0].tableId).toBe('C_PurchaseOrderTP');
   expect(result.matched[0].fieldId).toBe('PurchaseOrder');
   expect(result.matched[0].verified).toBe(false);
-  expect(ai.generateEmbeddings).not.toHaveBeenCalled();
+  expect(hana.getVectorCustomFields).not.toHaveBeenCalled();
 });
 
 test('no exact match but vector match found → field in matched[], matchSource=vector', async () => {
-  const field   = makeField({ rowIndex: 2 });
-  const cf      = makeCustomField({ score: 0.88 });
-  const hana    = makeMockHana(null, [cf]);
-  const ai      = makeMockAiCore([[0.1, 0.2, 0.3]]);
+  const field = makeField({ rowIndex: 2, tableId: 'EKKO', fieldId: 'EBELN' });
+  const cf    = makeCustomField({ score: 0.88 });
+  const hana  = makeMockHana({ result: null, isMultiple: false }, [cf]);
 
-  const result: Step1Result = await runStep1([field], hana as any, ai as any, defaultConfig);
+  const result: Step1Result = await runStep1([field], hana as any, noopAi, defaultConfig);
 
   expect(result.matched).toHaveLength(1);
   expect(result.unmatched).toHaveLength(0);
   expect(result.matched[0].matchSource).toBe('vector');
   expect(result.matched[0].matchScore).toBe(0.88);
-  expect(ai.generateEmbeddings).toHaveBeenCalledWith(['購買伝票番号 EBELN']);
   expect(hana.getVectorCustomFields).toHaveBeenCalledWith(
-    [0.1, 0.2, 0.3],
-    defaultConfig.vectorThreshold
+    'IF_MM_001 EKKO EBELN EBELN',
+    defaultConfig.vectorThreshold,
+    5,
+    undefined,
+    undefined
+  );
+});
+
+test('isMultiple → vector search with scope filter', async () => {
+  const field = makeField({ rowIndex: 2, tableId: 'EKKO', fieldId: 'EBELN' });
+  const cf    = makeCustomField({ score: 0.90 });
+  const hana  = makeMockHana({ result: null, isMultiple: true }, [cf]);
+
+  const result: Step1Result = await runStep1([field], hana as any, noopAi, defaultConfig);
+
+  expect(result.matched[0].matchSource).toBe('vector');
+  expect(hana.getVectorCustomFields).toHaveBeenCalledWith(
+    'IF_MM_001 EKKO EBELN EBELN',
+    defaultConfig.vectorThreshold,
+    5,
+    'EKKO',
+    'EBELN'
   );
 });
 
 test('no exact or vector match → field in unmatched[]', async () => {
-  const field = makeField({ rowIndex: 3 });
-  const hana  = makeMockHana(null, []);
-  const ai    = makeMockAiCore([[0.5, 0.6]]);
+  const field = makeField({ rowIndex: 3, tableId: 'EKKO', fieldId: 'EBELN' });
+  const hana  = makeMockHana({ result: null, isMultiple: false }, []);
 
-  const result: Step1Result = await runStep1([field], hana as any, ai as any, defaultConfig);
+  const result: Step1Result = await runStep1([field], hana as any, noopAi, defaultConfig);
 
   expect(result.matched).toHaveLength(0);
   expect(result.unmatched).toHaveLength(1);
   expect(result.unmatched[0].rowIndex).toBe(3);
 });
 
+test('field without tableId/fieldId → skips exact match, goes directly to vector', async () => {
+  const field = makeField({ rowIndex: 4 });
+  const cf    = makeCustomField({ score: 0.80 });
+  const hana  = makeMockHana({ result: null, isMultiple: false }, [cf]);
+
+  const result: Step1Result = await runStep1([field], hana as any, noopAi, defaultConfig);
+
+  expect(hana.getExactCustomField).not.toHaveBeenCalled();
+  expect(result.matched[0].matchSource).toBe('vector');
+  expect(hana.getVectorCustomFields).toHaveBeenCalledWith(
+    'IF_MM_001 EBELN',
+    defaultConfig.vectorThreshold,
+    5,
+    undefined,
+    undefined
+  );
+});
+
 test('mixed: some exact, some vector, some unmatched', async () => {
-  const fieldExact   = makeField({ rowIndex: 1, fieldName: 'EBELN' });
-  const fieldVector  = makeField({ rowIndex: 2, fieldName: 'LIFNR', fieldText: 'Vendor' });
-  const fieldNone    = makeField({ rowIndex: 3, fieldName: 'ZZCUSTOM', fieldText: 'Custom' });
+  const fieldExact  = makeField({ rowIndex: 1, tableId: 'EKKO',  fieldId: 'EBELN',    fieldName: 'EBELN' });
+  const fieldVector = makeField({ rowIndex: 2, tableId: 'EKKO',  fieldId: 'LIFNR',    fieldName: 'LIFNR',   fieldText: 'Vendor' });
+  const fieldNone   = makeField({ rowIndex: 3, tableId: 'EKKO',  fieldId: 'ZZCUSTOM', fieldName: 'ZZCUSTOM', fieldText: 'Custom' });
 
   const cfExact  = makeCustomField({ sourceField: 'EBELN', targetField: 'PurchaseOrder' });
   const cfVector = makeCustomField({ sourceField: 'LIFNR', targetField: 'Supplier', score: 0.82 });
 
   const hana = {
     getExactCustomField: jest.fn()
-      .mockResolvedValueOnce(cfExact)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null),
+      .mockResolvedValueOnce({ result: cfExact,  isMultiple: false })
+      .mockResolvedValueOnce({ result: null,     isMultiple: false })
+      .mockResolvedValueOnce({ result: null,     isMultiple: false }),
     getVectorCustomFields: jest.fn()
       .mockResolvedValueOnce([cfVector])
       .mockResolvedValueOnce([]),
   } as any;
 
-  const ai = makeMockAiCore([[0.1, 0.2], [0.3, 0.4]]);
-
   const result: Step1Result = await runStep1(
     [fieldExact, fieldVector, fieldNone],
     hana,
-    ai as any,
+    noopAi,
     defaultConfig
   );
 
@@ -158,43 +190,34 @@ test('mixed: some exact, some vector, some unmatched', async () => {
   expect(vectorResult?.rowIndex).toBe(2);
   expect(vectorResult?.matchScore).toBe(0.82);
   expect(result.unmatched[0].rowIndex).toBe(3);
-
-  expect(ai.generateEmbeddings).toHaveBeenCalledWith([
-    'Vendor LIFNR',
-    'Custom ZZCUSTOM',
-  ]);
 });
 
 test('empty input → returns empty matched and unmatched', async () => {
-  const hana = makeMockHana(null);
-  const ai   = makeMockAiCore();
+  const hana = makeMockHana({ result: null, isMultiple: false });
 
-  const result: Step1Result = await runStep1([], hana as any, ai as any, defaultConfig);
+  const result: Step1Result = await runStep1([], hana as any, noopAi, defaultConfig);
 
   expect(result.matched).toHaveLength(0);
   expect(result.unmatched).toHaveLength(0);
   expect(hana.getExactCustomField).not.toHaveBeenCalled();
-  expect(ai.generateEmbeddings).not.toHaveBeenCalled();
 });
 
 test('vector match score defaults to 0 when score is undefined', async () => {
-  const field = makeField({ rowIndex: 5 });
+  const field = makeField({ rowIndex: 5, tableId: 'EKKO', fieldId: 'EBELN' });
   const cf    = makeCustomField({ score: undefined });
-  const hana  = makeMockHana(null, [cf]);
-  const ai    = makeMockAiCore([[0.1, 0.2]]);
+  const hana  = makeMockHana({ result: null, isMultiple: false }, [cf]);
 
-  const result: Step1Result = await runStep1([field], hana as any, ai as any, defaultConfig);
+  const result: Step1Result = await runStep1([field], hana as any, noopAi, defaultConfig);
 
   expect(result.matched[0].matchScore).toBe(0);
   expect(result.matched[0].matchSource).toBe('vector');
 });
 
 test('correlationId is forwarded to logger', async () => {
-  const field = makeField();
-  const hana  = makeMockHana(makeCustomField());
-  const ai    = makeMockAiCore();
+  const field = makeField({ tableId: 'EKKO', fieldId: 'EBELN' });
+  const hana  = makeMockHana({ result: makeCustomField(), isMultiple: false });
 
-  await runStep1([field], hana as any, ai as any, defaultConfig, 'corr-123');
+  await runStep1([field], hana as any, noopAi, defaultConfig, 'corr-123');
 
   expect(log.info).toHaveBeenCalledWith(
     'Step1 complete',

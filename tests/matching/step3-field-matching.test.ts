@@ -1,6 +1,6 @@
 import { runStep3 } from '../../srv/matching/step3-field-matching.js';
 import type { Step3Result } from '../../srv/matching/step3-field-matching.js';
-import type { InterfaceFieldInput, MatchedFieldResult } from '../../srv/matching/step1-custom-fields.js';
+import type { InterfaceFieldInput, MatchedFieldResult } from '../../@cds-models/index.js';
 import type { HanaRepository, ViewField } from '../../srv/repository/hana-repository.js';
 import type { AiCoreClient, ToolResult } from '../../srv/ai/aicore-client.js';
 import type { PromptManager } from '../../srv/ai/prompt-manager.js';
@@ -37,27 +37,29 @@ function makeViewField(overrides: Partial<ViewField> = {}): ViewField {
 }
 
 const TOOL_SCHEMA_JSON = JSON.stringify({
-  name:        'match_fields',
+  name:        'review_field_matches',
   description: 'Match input fields to CDS view fields',
   inputSchema: {
     type:       'object',
     properties: {
-      results: {
+      review: {
         type:  'array',
         items: {
           type:       'object',
           properties: {
-            rowIndex: { type: 'number' },
-            tableId:  { type: 'string' },
-            fieldId:  { type: 'string' },
-            score:    { type: 'number' },
-            notes:    { type: 'string' },
+            row_index:  { type: 'integer' },
+            table_id:   { type: 'string' },
+            field_id:   { type: 'string' },
+            field_desc: { type: 'string' },
+            data_type:  { type: 'string' },
+            match:      { type: 'string' },
+            notes:      { type: 'string' },
           },
-          required: ['rowIndex', 'tableId', 'fieldId'],
+          required: ['row_index', 'table_id', 'field_id', 'match', 'notes'],
         },
       },
     },
-    required: ['results'],
+    required: ['review'],
   },
 });
 
@@ -74,13 +76,11 @@ function makeMockAiCore(toolResult: ToolResult): jest.Mocked<Pick<AiCoreClient, 
 }
 
 function makeMockPrompts(
-  systemPrompt  = 'You are a field matcher.',
-  userTemplate  = 'Fields: {fields}\nViewFields: {viewFields}',
+  userTemplate  = 'Fields: {fields}\nContext: {context}',
   toolSchemaRaw = TOOL_SCHEMA_JSON
 ): jest.Mocked<Pick<PromptManager, 'getPrompt'>> {
   return {
     getPrompt: jest.fn((_step, _lang, type) => {
-      if (type === 'system')      return systemPrompt;
       if (type === 'user')        return userTemplate;
       if (type === 'tool_schema') return toolSchemaRaw;
       return '';
@@ -109,10 +109,10 @@ test('normal flow — LLM returns matched results → all fields mapped with mat
   const viewField = makeViewField({ tableId: 'EKKO', fieldId: 'PurchaseOrder', dataType: 'CHAR(10)' });
   const hana      = makeMockHana([viewField]);
   const aiCore    = makeMockAiCore({
-    toolName:  'match_fields',
+    toolName:  'review_field_matches',
     toolInput: {
-      results: [
-        { rowIndex: 1, tableId: 'EKKO', fieldId: 'PurchaseOrder', score: 0.95, notes: 'Good match' },
+      review: [
+        { row_index: 1, table_id: 'EKKO', field_id: 'PurchaseOrder', match: '95', notes: 'Good match' },
       ],
     },
     usage: { inputTokens: 100, outputTokens: 50 },
@@ -143,7 +143,7 @@ test('normal flow — LLM returns matched results → all fields mapped with mat
 test('empty viewFields → returns error results for all unmatched fields', async () => {
   const fields  = [makeField({ rowIndex: 1 }), makeField({ rowIndex: 2, fieldName: 'LIFNR' })];
   const hana    = makeMockHana([]);
-  const aiCore  = makeMockAiCore({ toolName: 'match_fields', toolInput: { results: [] }, usage: { inputTokens: 0, outputTokens: 0 } });
+  const aiCore  = makeMockAiCore({ toolName: 'review_field_matches', toolInput: { review: [] }, usage: { inputTokens: 0, outputTokens: 0 } });
   const prompts = makeMockPrompts();
 
   const result: Step3Result = await runStep3(
@@ -177,8 +177,8 @@ test('LLM batch failure → batch marked as error, other batches still processed
     callWithTools: jest.fn()
       .mockRejectedValueOnce(new Error('LLM timeout'))
       .mockResolvedValueOnce({
-        toolName:  'match_fields',
-        toolInput: { results: [{ rowIndex: 2, tableId: 'EKKO', fieldId: 'PurchaseOrder', score: 0.8 }] },
+        toolName:  'review_field_matches',
+        toolInput: { review: [{ row_index: 2, table_id: 'EKKO', field_id: 'PurchaseOrder', match: '80', notes: '' }] },
         usage:     { inputTokens: 50, outputTokens: 20 },
       }),
   } as any;
@@ -221,18 +221,22 @@ test('batching — fields split correctly into batches of batchSize', async () =
   const callTracker: number[][] = [];
   const aiCore: jest.Mocked<Pick<AiCoreClient, 'callWithTools'>> = {
     callWithTools: jest.fn().mockImplementation((_messages, _tools, _provider, _model) => {
-      const userMsg = _messages[1].content as string;
-      const parsedFields = JSON.parse(userMsg.replace('Fields: ', '').split('\n')[0]) as InterfaceFieldInput[];
-      callTracker.push(parsedFields.map(f => f.rowIndex));
+      const userMsg = _messages[0].content as string;
+      const fieldLines = userMsg
+        .replace('Fields: ', '')
+        .split('\n')
+        .filter(l => l.trim() && !l.startsWith('Context'));
+      const rowIndices = fieldLines.map(l => parseInt(l.split(';')[0])).filter(n => !isNaN(n));
+      callTracker.push(rowIndices);
       return Promise.resolve({
-        toolName:  'match_fields',
-        toolInput: { results: parsedFields.map(f => ({ rowIndex: f.rowIndex, tableId: 'EKKO', fieldId: 'PurchaseOrder', score: 0.9 })) },
+        toolName:  'review_field_matches',
+        toolInput: { review: rowIndices.map(idx => ({ row_index: idx, table_id: 'EKKO', field_id: 'PurchaseOrder', match: '90', notes: '' })) },
         usage:     { inputTokens: 50, outputTokens: 20 },
       });
     }),
   } as any;
 
-  const prompts = makeMockPrompts('sys', 'Fields: {fields}\n{viewFields}');
+  const prompts = makeMockPrompts('Fields: {fields}\nContext: {context}');
   const config: RequestConfig = { ...defaultConfig, batchSize: 3, maxWorkers: 1 };
 
   const result: Step3Result = await runStep3(
@@ -265,12 +269,14 @@ test('concurrency — multiple batches processed with maxWorkers concurrency', a
       return new Promise(resolve => {
         setImmediate(() => {
           concurrentCount--;
-          const batch = JSON.parse(
-            (_messages[1].content as string).replace('Fields: ', '').split('\n')[0]
-          ) as InterfaceFieldInput[];
+          const fieldLines = (_messages[0].content as string)
+            .replace('Fields: ', '')
+            .split('\n')
+            .filter((l: string) => l.trim() && !l.startsWith('Context'));
+          const rowIndices = fieldLines.map((l: string) => parseInt(l.split(';')[0])).filter((n: number) => !isNaN(n));
           resolve({
-            toolName:  'match_fields',
-            toolInput: { results: batch.map(f => ({ rowIndex: f.rowIndex, tableId: 'EKKO', fieldId: 'PurchaseOrder', score: 0.7 })) },
+            toolName:  'review_field_matches',
+            toolInput: { review: rowIndices.map((idx: number) => ({ row_index: idx, table_id: 'EKKO', field_id: 'PurchaseOrder', match: '70', notes: '' })) },
             usage:     { inputTokens: 30, outputTokens: 10 },
           });
         });
@@ -278,7 +284,7 @@ test('concurrency — multiple batches processed with maxWorkers concurrency', a
     }),
   } as any;
 
-  const prompts = makeMockPrompts('sys', 'Fields: {fields}\n{viewFields}');
+  const prompts = makeMockPrompts('Fields: {fields}\n{viewFields}');
   const config: RequestConfig = { ...defaultConfig, batchSize: 2, maxWorkers: 3 };
 
   const result: Step3Result = await runStep3(
@@ -297,7 +303,7 @@ test('concurrency — multiple batches processed with maxWorkers concurrency', a
 
 test('empty input fields → returns empty matched', async () => {
   const hana    = makeMockHana([makeViewField()]);
-  const aiCore  = makeMockAiCore({ toolName: 'match_fields', toolInput: { results: [] }, usage: { inputTokens: 0, outputTokens: 0 } });
+  const aiCore  = makeMockAiCore({ toolName: 'review_field_matches', toolInput: { review: [] }, usage: { inputTokens: 0, outputTokens: 0 } });
   const prompts = makeMockPrompts();
 
   const result: Step3Result = await runStep3(
@@ -322,8 +328,8 @@ test('dataType is looked up from viewFields by tableId+fieldId', async () => {
   const viewField = makeViewField({ tableId: 'EKKO', fieldId: 'PurchaseOrder', dataType: 'NVARCHAR(10)' });
   const hana      = makeMockHana([viewField]);
   const aiCore    = makeMockAiCore({
-    toolName:  'match_fields',
-    toolInput: { results: [{ rowIndex: 1, tableId: 'EKKO', fieldId: 'PurchaseOrder', score: 0.9 }] },
+    toolName:  'review_field_matches',
+    toolInput: { review: [{ row_index: 1, table_id: 'EKKO', field_id: 'PurchaseOrder', match: '90', notes: '' }] },
     usage:     { inputTokens: 50, outputTokens: 20 },
   });
   const prompts = makeMockPrompts();
@@ -345,8 +351,8 @@ test('LLM result with unknown tableId+fieldId gets empty dataType', async () => 
   const viewField = makeViewField({ tableId: 'EKKO', fieldId: 'PurchaseOrder' });
   const hana      = makeMockHana([viewField]);
   const aiCore    = makeMockAiCore({
-    toolName:  'match_fields',
-    toolInput: { results: [{ rowIndex: 1, tableId: 'UNKNOWN', fieldId: 'NOFIELD', score: 0.3 }] },
+    toolName:  'review_field_matches',
+    toolInput: { review: [{ row_index: 1, table_id: 'UNKNOWN', field_id: 'NOFIELD', match: '30', notes: '' }] },
     usage:     { inputTokens: 50, outputTokens: 20 },
   });
   const prompts = makeMockPrompts();
@@ -368,8 +374,8 @@ test('correlationId is forwarded to logger on completion', async () => {
   const viewField = makeViewField();
   const hana      = makeMockHana([viewField]);
   const aiCore    = makeMockAiCore({
-    toolName:  'match_fields',
-    toolInput: { results: [{ rowIndex: 1, tableId: 'EKKO', fieldId: 'PurchaseOrder', score: 0.9 }] },
+    toolName:  'review_field_matches',
+    toolInput: { review: [{ row_index: 1, table_id: 'EKKO', field_id: 'PurchaseOrder', match: '90', notes: '' }] },
     usage:     { inputTokens: 50, outputTokens: 20 },
   });
   const prompts = makeMockPrompts();

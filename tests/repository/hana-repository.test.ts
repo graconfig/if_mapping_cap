@@ -32,33 +32,68 @@ test('getExactCustomField returns null when no rows', async () => {
   mockExec.mockResolvedValueOnce([]);
   const repo = new HanaRepository();
   await repo.connect();
-  const result = await repo.getExactCustomField('EKKO', 'EBELN');
+  const { result, isMultiple } = await repo.getExactCustomField('EKKO', 'EBELN');
   expect(result).toBeNull();
+  expect(isMultiple).toBe(false);
+});
+
+test('getExactCustomField returns isMultiple when 2 rows', async () => {
+  mockExec.mockResolvedValueOnce([
+    { ID: '1', IFNAME: 'IF001', SOURCETABLE: 'EKKO', SOURCEFIELD: 'EBELN', SOURCEDESC: '', TARGETTABLE: '', TARGETFIELD: '', TARGETDESC: '', NOTES: '' },
+    { ID: '2', IFNAME: 'IF001', SOURCETABLE: 'EKKO', SOURCEFIELD: 'EBELN', SOURCEDESC: '', TARGETTABLE: '', TARGETFIELD: '', TARGETDESC: '', NOTES: '' },
+  ]);
+  const repo = new HanaRepository();
+  await repo.connect();
+  const { result, isMultiple } = await repo.getExactCustomField('EKKO', 'EBELN');
+  expect(result).toBeNull();
+  expect(isMultiple).toBe(true);
 });
 
 test('getExactCustomField returns mapped CustomField', async () => {
   mockExec.mockResolvedValueOnce([{
     ID: '1', IFNAME: 'IF001', SOURCETABLE: 'EKKO', SOURCEFIELD: 'EBELN',
     SOURCEDESC: 'PO Number', TARGETTABLE: 'EKKO', TARGETFIELD: 'EBELN',
-    TARGETDESC: '購買伝票番号', NOTES: '', ISACTIVE: 1
+    TARGETDESC: '購買伝票番号', NOTES: '',
   }]);
   const repo = new HanaRepository();
   await repo.connect();
-  const result = await repo.getExactCustomField('EKKO', 'EBELN');
+  const { result, isMultiple } = await repo.getExactCustomField('EKKO', 'EBELN');
+  expect(isMultiple).toBe(false);
   expect(result).not.toBeNull();
   expect(result!.sourceTable).toBe('EKKO');
   expect(result!.targetField).toBe('EBELN');
 });
 
-test('getVectorCustomFields passes threshold to SQL', async () => {
+test('getExactCustomField embeds nullOrEq conditions into SQL (no bind params for table/field)', async () => {
   mockExec.mockResolvedValueOnce([]);
   const repo = new HanaRepository();
   await repo.connect();
-  await repo.getVectorCustomFields([0.1, 0.2], 0.8, 3);
-  expect(mockExec).toHaveBeenCalledWith(
-    expect.stringContaining('COSINE_SIMILARITY'),
-    expect.arrayContaining([expect.any(String), expect.any(String), 0.8])
-  );
+  await repo.getExactCustomField('EKKO', 'EBELN');
+  const [sql, params] = mockExec.mock.calls[0] as [string, unknown[]];
+  expect(sql).toContain(`"SOURCETABLE" = 'EKKO'`);
+  expect(sql).toContain(`"SOURCEFIELD" = 'EBELN'`);
+  expect(params).toEqual([]);
+});
+
+test('getVectorCustomFields passes queryText and threshold as bind params', async () => {
+  mockExec.mockResolvedValueOnce([]);
+  const repo = new HanaRepository();
+  await repo.connect();
+  await repo.getVectorCustomFields('EBELN 購買伝票番号', 0.8, 3);
+  const [sql, params] = mockExec.mock.calls[0] as [string, unknown[]];
+  expect(sql).toContain('COSINE_SIMILARITY');
+  expect(params).toEqual(['EBELN 購買伝票番号', 0.8]);
+});
+
+test('getVectorCustomFields embeds nullOrEq scope filter into SQL when scope provided', async () => {
+  mockExec.mockResolvedValueOnce([]);
+  const repo = new HanaRepository();
+  await repo.connect();
+  await repo.getVectorCustomFields('EBELN', 0.75, 5, 'EKKO', 'EBELN');
+  const [sql, params] = mockExec.mock.calls[0] as [string, unknown[]];
+  expect(sql).toContain(`"SOURCETABLE" = 'EKKO'`);
+  expect(sql).toContain(`"SOURCEFIELD" = 'EBELN'`);
+  expect(params).toEqual(['EBELN', 0.75]);
 });
 
 test('getViewFields returns empty array when no views requested', async () => {

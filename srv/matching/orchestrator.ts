@@ -18,13 +18,13 @@ export async function runInBatches<T, R>(
   return results;
 }
 
-import type { HanaRepository } from '../repository/hana-repository.js';
+import type { InterfaceFieldInput, MatchedFieldResult } from '../../@cds-models/index.js';
 import type { AiCoreClient } from '../ai/aicore-client.js';
 import type { PromptManager } from '../ai/prompt-manager.js';
+import type { HanaRepository } from '../repository/hana-repository.js';
 import type { RequestConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
 import { runStep1 } from './step1-custom-fields.js';
-import type { InterfaceFieldInput, MatchedFieldResult } from './step1-custom-fields.js';
 import { runStep2 } from './step2-view-selection.js';
 import { runStep3 } from './step3-field-matching.js';
 import { runStep4 } from './step4-odata-verify.js';
@@ -56,8 +56,13 @@ export async function runMatching(
       results = step4.results;
     }
     log.info('Orchestrator complete', { correlationId, total: results.length });
-    return results.slice().sort((a, b) => a.rowIndex - b.rowIndex);
+    return results.slice().sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
   }
+
+  const terminologyRows = await deps.hana.getTerminologyMappings().catch(() => []);
+  const terminologyText = terminologyRows
+    .map(t => `${t.sourceTerm},${t.sourceTermAlias},${t.sourceContext},${t.targetTerm},${t.targetTermAlias},${t.sapModule},${t.sapTransaction},${t.sapObjectType},${t.sapTechnicalName},${t.category},${t.domainArea},${t.priority},${t.confidence}`)
+    .join('\n');
 
   const { selectedViews } = await runStep2(
     step1Unmatched,
@@ -65,7 +70,8 @@ export async function runMatching(
     deps.aiCore,
     deps.prompts,
     config,
-    correlationId
+    correlationId,
+    terminologyText
   );
 
   const { matched: step3Matched } = await runStep3(
@@ -75,7 +81,8 @@ export async function runMatching(
     deps.aiCore,
     deps.prompts,
     config,
-    correlationId
+    correlationId,
+    terminologyText
   );
 
   const allMatched: MatchedFieldResult[] = [...step1Matched, ...step3Matched];
@@ -87,5 +94,5 @@ export async function runMatching(
   }
 
   log.info('Orchestrator complete', { correlationId, total: results.length });
-  return results.slice().sort((a, b) => a.rowIndex - b.rowIndex);
+  return results.slice().sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
 }

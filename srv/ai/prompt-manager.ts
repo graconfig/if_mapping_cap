@@ -3,7 +3,7 @@ import { log } from '../utils/logger.js';
 
 export type PromptStep = 'view_selection' | 'field_matching';
 export type Language = 'en' | 'zh' | 'ja';
-export type PromptType = 'system' | 'user' | 'tool_schema';
+export type PromptType = 'user' | 'tool_schema';
 
 interface PromptRow {
   language:   string;

@@ -1,6 +1,6 @@
 import { runStep4 } from '../../srv/matching/step4-odata-verify.js';
 import type { Step4Result } from '../../srv/matching/step4-odata-verify.js';
-import type { MatchedFieldResult } from '../../srv/matching/step1-custom-fields.js';
+import type { MatchedFieldResult } from '../../@cds-models/index.js';
 import type { RequestConfig } from '../../srv/utils/config.js';
 import { log } from '../../srv/utils/logger.js';
 

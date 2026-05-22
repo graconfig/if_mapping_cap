@@ -9,14 +9,17 @@
     "start": "cds-serve",
     "dev": "cds watch",
     "build": "cds build && tsc --noEmit",
+    "codegen": "cds-typer \"*\" --outputDirectory ./@cds-models",
     "test": "jest --runInBand",
     "test:watch": "jest --watch"
   },
   "dependencies": {
     "@sap/cds": "^8",
-    "@sap/hana-client": "^2.21"
+    "@sap/hana-client": "^2.21",
+    "sqlite3": "^6.0.1"
   },
   "devDependencies": {
+    "@cap-js/cds-typer": "^0.39.1",
     "@cap-js/cds-types": "^0.11.0",
     "@sap/cds-dk": "^8",
     "@types/jest": "^29",

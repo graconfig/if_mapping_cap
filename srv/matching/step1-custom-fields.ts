@@ -1,30 +1,9 @@
-import type { HanaRepository, CustomField } from '../repository/hana-repository.js';
-import type { AiCoreClient } from '../ai/aicore-client.js';
+import { AiCoreClient } from '../ai/aicore-client.js';
+import type { CustomField, HanaRepository } from '../repository/hana-repository.js';
 import type { RequestConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
-
-export interface InterfaceFieldInput {
-  rowIndex:    number;
-  module:      string;
-  ifName:      string;
-  ifDesc:      string;
-  fieldName:   string;
-  fieldText:   string;
-  sampleValue: string;
-  remark:      string;
-}
-
-export interface MatchedFieldResult {
-  rowIndex:    number;
-  tableId:     string;
-  fieldId:     string;
-  dataType:    string;
-  fieldText:   string;
-  matchScore:  number;
-  matchSource: 'exact' | 'vector' | 'ai' | 'error';
-  notes:       string;
-  verified:    boolean;
-}
+// Generated from schema.cds — run `npm run codegen` after schema changes
+import type { InterfaceFieldInput, MatchedFieldResult } from '../../@cds-models/index.js';
 
 export interface Step1Result {
   matched:   MatchedFieldResult[];
@@ -38,54 +17,61 @@ function toMatchedResult(
   matchScore:  number
 ): MatchedFieldResult {
   return {
-    rowIndex:   field.rowIndex,
-    tableId:    cf.targetTable,
-    fieldId:    cf.targetField,
-    dataType:   '',
-    fieldText:  cf.targetDesc,
+    rowIndex:    field.rowIndex ?? 0,
+    tableId:     cf.targetTable,
+    fieldId:     cf.targetField,
+    dataType:    cf.dataType    || '',
+    fieldText:   cf.targetDesc,
     matchScore,
     matchSource,
-    notes:      cf.notes,
-    verified:   false,
+    notes:       cf.notes,
+    verified:    false,
+    obligatory:  cf.obligatory  || undefined,
+    sampleValue: cf.sampleValue || undefined,
   };
 }
 
 export async function runStep1(
-  fields:        InterfaceFieldInput[],
-  hana:          HanaRepository,
-  aiCore:        AiCoreClient,
-  config:        RequestConfig,
-  correlationId?: string
-): Promise<Step1Result> {
+fields: InterfaceFieldInput[], hana: HanaRepository, aiCore: AiCoreClient, config: RequestConfig, correlationId?: string): Promise<Step1Result> {
   const matched:   MatchedFieldResult[]  = [];
   const unmatched: InterfaceFieldInput[] = [];
 
+  type UnmatchedEntry = { field: InterfaceFieldInput; scopeTable?: string; scopeField?: string };
+  const pendingVector: UnmatchedEntry[] = [];
+
   for (const field of fields) {
-    const exact = await hana.getExactCustomField(field.fieldName);
-    if (exact) {
-      matched.push(toMatchedResult(field, exact, 'exact', 1.0));
+    const tableId = field.tableId ?? '';
+    const fieldId = field.fieldId ?? '';
+
+    if (tableId || fieldId) {
+      const { result, isMultiple } = await hana.getExactCustomField(tableId, fieldId);
+      if (result) {
+        matched.push(toMatchedResult(field, result, 'exact', 1.0));
+        continue;
+      }
+      pendingVector.push({
+        field,
+        scopeTable: isMultiple ? tableId : undefined,
+        scopeField: isMultiple ? fieldId : undefined,
+      });
     } else {
-      unmatched.push(field);
+      pendingVector.push({ field });
     }
   }
 
-  let stillUnmatched = unmatched;
+  const stillUnmatched: InterfaceFieldInput[] = [];
 
-  if (unmatched.length > 0) {
-    const texts      = unmatched.map(f => `${f.fieldText} ${f.fieldName}`);
-    const embeddings = await aiCore.generateEmbeddings(texts);
-    stillUnmatched   = [];
+  for (const { field, scopeTable, scopeField } of pendingVector) {
+    const queryText = [field.ifName, field.tableId, field.fieldId, field.fieldName]
+      .filter(Boolean).join(' ');
+    const results = await hana.getVectorCustomFields(
+      queryText, config.vectorThreshold, 5, scopeTable, scopeField
+    );
 
-    for (let i = 0; i < unmatched.length; i++) {
-      const field     = unmatched[i];
-      const embedding = embeddings[i];
-      const results   = await hana.getVectorCustomFields(embedding, config.vectorThreshold);
-
-      if (results.length > 0) {
-        matched.push(toMatchedResult(field, results[0], 'vector', results[0].score ?? 0));
-      } else {
-        stillUnmatched.push(field);
-      }
+    if (results.length > 0) {
+      matched.push(toMatchedResult(field, results[0], 'vector', results[0].score ?? 0));
+    } else {
+      stillUnmatched.push(field);
     }
   }
 
