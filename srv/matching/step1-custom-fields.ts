@@ -20,14 +20,18 @@ function toMatchedResult(
     rowIndex:    field.rowIndex ?? 0,
     tableId:     cf.targetTable,
     fieldId:     cf.targetField,
-    dataType:    cf.dataType    || '',
+    dataType:    cf.targetType   || '',
     fieldText:   cf.targetDesc,
     matchScore,
     matchSource,
     notes:       cf.notes,
     verified:    false,
     obligatory:  cf.obligatory  || undefined,
-    sampleValue: cf.sampleValue || undefined,
+    sampleValue: cf.allowedValues || undefined,
+    keyFlag:     cf.keyFlag     || undefined,
+    lengthTotal: cf.targetLength   != null ? String(cf.targetLength)   : undefined,
+    lengthDec:   cf.targetDecimals != null ? String(cf.targetDecimals) : undefined,
+    color:       cf.color       || undefined,
   };
 }
 

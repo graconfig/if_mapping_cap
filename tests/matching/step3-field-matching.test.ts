@@ -32,6 +32,7 @@ function makeViewField(overrides: Partial<ViewField> = {}): ViewField {
     tableId:   'EKKO',
     dataType:  'CHAR(10)',
     fieldText: 'Purchase Order Number',
+    isKey:     false,
     ...overrides,
   };
 }

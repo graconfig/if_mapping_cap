@@ -4,6 +4,7 @@ import type { PromptManager } from '../ai/prompt-manager.js';
 import type { HanaRepository, ViewField } from '../repository/hana-repository.js';
 import type { RequestConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { trackTokens } from '../utils/token-tracker.js';
 
 export interface Step3Result {
   matched: MatchedFieldResult[];
@@ -36,26 +37,30 @@ async function runWithConcurrency<T>(
 }
 
 interface LlmMatchResult {
-  row_index:    number;
-  table_id:     string;
-  field_id:     string;
-  field_desc?:  string;
-  data_type?:   string;
-  match?:       string;
-  obligatory?:  string;
+  row_index:     number;
+  table_id:      string;
+  field_id:      string;
+  field_desc?:   string;
+  data_type?:    string;
+  length_total?: string;
+  length_dec?:   string;
+  key_flag?:     string;
+  match?:        string;
+  obligatory?:   string;
   sample_value?: string;
-  notes?:       string;
+  notes?:        string;
 }
 
 export async function runStep3(
-  unmatched:        InterfaceFieldInput[],
-  selectedViews:    string[],
-  hana:             HanaRepository,
-  aiCore:           AiCoreClient,
-  prompts:          PromptManager,
-  config:           RequestConfig,
-  correlationId?:   string,
-  terminologyText?: string
+  unmatched:          InterfaceFieldInput[],
+  selectedViews:      string[],
+  hana:               HanaRepository,
+  aiCore:             AiCoreClient,
+  prompts:            PromptManager,
+  config:             RequestConfig,
+  correlationId?:     string,
+  terminologyText?:   string,
+  manualFieldsText?:  string
 ): Promise<Step3Result> {
   const viewFields: ViewField[] = await hana.getViewFields(selectedViews);
 
@@ -101,7 +106,7 @@ export async function runStep3(
 
       const userPrompt = fillTemplate(userTemplate, {
         fields:        fieldsText,
-        manual_fields: '',
+        manual_fields: manualFieldsText ?? '',
         context:       contextText,
         context_count: String(viewFields.length),
         match_number:  String(config.matchNumber),
@@ -117,21 +122,46 @@ export async function runStep3(
         config.llmModel
       );
 
+      void trackTokens({
+        requestId:    correlationId ?? 'unknown',
+        provider:     config.provider as 'claude' | 'openai' | 'gemini',
+        step:         'field_matching',
+        inputTokens:  result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+      });
+
       const toolInput = result.toolInput as { review?: LlmMatchResult[] };
       const llmResults: LlmMatchResult[] = toolInput.review ?? [];
 
       return llmResults.map(r => {
-        const vf = viewFieldIndex.get(`${r.table_id}::${r.field_id}`);
+        const vf = viewFieldIndex.get(`${r.table_id?.split('\n')[0].trim()}::${r.field_id?.split('\n')[0].trim()}`);
+
+        const tableLines = (r.table_id ?? '').split('\n').map(s => s.trim()).filter(Boolean);
+        const fieldLines = (r.field_id ?? '').split('\n').map(s => s.trim()).filter(Boolean);
+        const lineCount  = Math.max(tableLines.length, fieldLines.length);
+        const keyFlagParts:    string[] = [];
+        const obligatoryParts: string[] = [];
+        for (let i = 0; i < lineCount; i++) {
+          const entry = viewFieldIndex.get(`${tableLines[i] ?? ''}::${fieldLines[i] ?? ''}`);
+          keyFlagParts.push(entry?.isKey ? '○' : '');
+          obligatoryParts.push(entry?.isKey ? '必須' : '任意');
+        }
+
         return {
           rowIndex:    r.row_index,
-          tableId:     r.table_id,
-          fieldId:     r.field_id,
-          dataType:    r.data_type ?? vf?.dataType ?? '',
-          fieldText:   r.field_desc ?? vf?.fieldText ?? '',
+          tableId:     r.table_id    ?? '',
+          fieldId:     r.field_id    ?? '',
+          dataType:    r.data_type   ?? vf?.dataType  ?? '',
+          fieldText:   r.field_desc  ?? vf?.fieldText ?? '',
           matchScore:  r.match ? parseFloat(r.match) / 100 : 0,
           matchSource: 'ai' as const,
-          notes:       r.notes ?? '',
+          notes:       r.notes       ?? '',
           verified:    false,
+          keyFlag:     lineCount > 0 ? keyFlagParts.join('\n')    : (r.key_flag    || undefined),
+          obligatory:  lineCount > 0 ? obligatoryParts.join('\n') : (r.obligatory  || undefined),
+          sampleValue: r.sample_value || undefined,
+          lengthTotal: r.length_total || undefined,
+          lengthDec:   r.length_dec   || undefined,
         };
       });
     } catch (err) {

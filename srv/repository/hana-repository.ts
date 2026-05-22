@@ -1,72 +1,21 @@
 import hana from '@sap/hana-client';
+import type {
+  CdsView         as _CdsCdsView,
+  ViewField       as _CdsViewField,
+  TerminologyMapping as _CdsTerminologyMapping,
+  CustomField     as _CdsCustomField,
+} from '../../@cds-models/external/index.js';
+import type {
+  CustomFieldUploadInput as _CdsCustomFieldUploadInput,
+  UploadResult           as _CdsUploadResult,
+} from '../../@cds-models/index.js';
 
-export interface TerminologyMapping {
-  sourceTerm:       string;
-  sourceTermAlias:  string;
-  sourceContext:    string;
-  targetTerm:       string;
-  targetTermAlias:  string;
-  sapModule:        string;
-  sapTransaction:   string;
-  sapObjectType:    string;
-  sapTechnicalName: string;
-  category:         string;
-  domainArea:       string;
-  priority:         string;
-  confidence:       string;
-}
-
-export interface CustomField {
-  id:          string;
-  ifName:      string;
-  sourceTable: string;
-  sourceField: string;
-  sourceDesc:  string;
-  targetTable: string;
-  targetField: string;
-  targetDesc:  string;
-  dataType:    string;
-  lengthTotal: string;
-  lengthDec:   string;
-  keyFlag:     string;
-  obligatory:  string;
-  sampleValue: string;
-  notes:       string;
-  score?:      number;
-}
-
-export interface CdsView {
-  id:          string;
-  viewName:    string;
-  category:    string;
-  description: string;
-  score?:      number;
-}
-
-export interface ViewField {
-  viewName:  string;
-  fieldId:   string;
-  tableId:   string;
-  dataType:  string;
-  fieldText: string;
-}
-
-export interface CustomFieldRecord {
-  ifName:      string;
-  sourceDesc:  string;
-  sourceTable: string;
-  sourceField: string;
-  targetDesc:  string;
-  targetTable: string;
-  targetField: string;
-  notes:       string;
-}
-
-export interface UploadResult {
-  inserted: number;
-  updated:  number;
-  deleted:  number;
-}
+export type TerminologyMapping = _CdsTerminologyMapping;
+export type CdsView            = _CdsCdsView & { score?: number };
+export type ViewField          = _CdsViewField & { isKey: boolean };
+export type CustomField        = _CdsCustomField & { score?: number };
+export type CustomFieldRecord  = _CdsCustomFieldUploadInput;
+export type UploadResult       = _CdsUploadResult;
 
 function resolveHanaConfig(): Record<string, unknown> {
   if (process.env.VCAP_SERVICES) {
@@ -103,22 +52,32 @@ function nullOrEq(col: string, val: string): string {
 
 function mapCustomField(row: Record<string, unknown>): CustomField {
   return {
-    id:          String(row['ID']            ?? ''),
-    ifName:      String(row['IFNAME']        ?? ''),
-    sourceTable: String(row['SOURCETABLE']   ?? ''),
-    sourceField: String(row['SOURCEFIELD']   ?? ''),
-    sourceDesc:  String(row['SOURCEDESC']    ?? ''),
-    targetTable: String(row['TARGETTABLE']   ?? ''),
-    targetField: String(row['TARGETFIELD']   ?? ''),
-    targetDesc:  String(row['TARGETDESC']    ?? ''),
-    dataType:    String(row['TARGETTYPE']    ?? ''),
-    lengthTotal: row['TARGETLENGTH']   != null ? String(row['TARGETLENGTH'])   : '',
-    lengthDec:   row['TARGETDECIMALS'] != null ? String(row['TARGETDECIMALS']) : '',
-    keyFlag:     String(row['KEYFLAG']       ?? ''),
-    obligatory:  String(row['OBLIGATORY']    ?? ''),
-    sampleValue: String(row['ALLOWEDVALUES'] ?? ''),
-    notes:       String(row['NOTES']         ?? ''),
-    score:       row['SCORE'] != null ? Number(row['SCORE']) : undefined,
+    ID:               String(row['ID']                ?? ''),
+    scenario:         String(row['SCENARIO']          ?? ''),
+    ifName:           String(row['IFNAME']            ?? ''),
+    sourceTable:      String(row['SOURCETABLE']       ?? ''),
+    sourceField:      String(row['SOURCEFIELD']       ?? ''),
+    sourceDesc:       String(row['SOURCEDESC']        ?? ''),
+    sourceType:       String(row['SOURCETYPE']        ?? ''),
+    sourceLength:     row['SOURCELENGTH']   != null ? Number(row['SOURCELENGTH'])   : null,
+    sourceDecimals:   row['SOURCEDECIMALS'] != null ? Number(row['SOURCEDECIMALS']) : null,
+    targetTable:      String(row['TARGETTABLE']       ?? ''),
+    targetField:      String(row['TARGETFIELD']       ?? ''),
+    targetDesc:       String(row['TARGETDESC']        ?? ''),
+    targetType:       String(row['TARGETTYPE']        ?? ''),
+    targetLength:     row['TARGETLENGTH']   != null ? Number(row['TARGETLENGTH'])   : null,
+    targetDecimals:   row['TARGETDECIMALS'] != null ? Number(row['TARGETDECIMALS']) : null,
+    keyFlag:          String(row['KEYFLAG']           ?? ''),
+    obligatory:       String(row['OBLIGATORY']        ?? ''),
+    allowedValues:    String(row['ALLOWEDVALUES']     ?? ''),
+    allowedValuesDesc: String(row['ALLOWEDVALUESDESC'] ?? ''),
+    class1:           String(row['CLASS1']            ?? ''),
+    class2:           String(row['CLASS2']            ?? ''),
+    class3:           String(row['CLASS3']            ?? ''),
+    isAppend:         String(row['ISAPPEND']          ?? ''),
+    notes:            String(row['NOTES']             ?? ''),
+    color:            String(row['COLOR']             ?? ''),
+    score:            row['SCORE'] != null ? Number(row['SCORE']) : undefined,
   };
 }
 
@@ -147,10 +106,12 @@ export class HanaRepository {
     sourceTable: string,
     sourceField: string
   ): Promise<{ result: CustomField | null; isMultiple: boolean }> {
-    const cols = `ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
+    const cols = `ID, SCENARIO, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
+               SOURCETYPE, SOURCELENGTH, SOURCEDECIMALS,
                TARGETTABLE, TARGETFIELD, TARGETDESC,
                TARGETTYPE, TARGETLENGTH, TARGETDECIMALS,
-               KEYFLAG, OBLIGATORY, ALLOWEDVALUES, NOTES`;
+               KEYFLAG, OBLIGATORY, ALLOWEDVALUES, ALLOWEDVALUESDESC,
+               CLASS1, CLASS2, CLASS3, ISAPPEND, NOTES, COLOR`;
     const tableCond = nullOrEq('SOURCETABLE', sourceTable);
     const fieldCond = nullOrEq('SOURCEFIELD',  sourceField);
     const sql = `
@@ -172,10 +133,12 @@ export class HanaRepository {
     sourceTable?: string,
     sourceField?: string
   ): Promise<CustomField[]> {
-    const cols = `ID, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
+    const cols = `ID, SCENARIO, IFNAME, SOURCETABLE, SOURCEFIELD, SOURCEDESC,
+            SOURCETYPE, SOURCELENGTH, SOURCEDECIMALS,
             TARGETTABLE, TARGETFIELD, TARGETDESC,
             TARGETTYPE, TARGETLENGTH, TARGETDECIMALS,
-            KEYFLAG, OBLIGATORY, ALLOWEDVALUES, NOTES`;
+            KEYFLAG, OBLIGATORY, ALLOWEDVALUES, ALLOWEDVALUESDESC,
+            CLASS1, CLASS2, CLASS3, ISAPPEND, NOTES, COLOR`;
     let scopeFilter = '';
     if (sourceTable !== undefined) scopeFilter += ` AND ${nullOrEq('SOURCETABLE', sourceTable)}`;
     if (sourceField !== undefined) scopeFilter += ` AND ${nullOrEq('SOURCEFIELD', sourceField)}`;
@@ -205,7 +168,7 @@ export class HanaRepository {
       ORDER BY SCORE DESC`;
     const rows = await this.conn.exec(sql, [queryText]) as Record<string, unknown>[];
     return rows.map(row => ({
-      id:          String(row['ID']           ?? ''),
+      ID:          String(row['ID']           ?? ''),
       viewName:    String(row['SCENARIO']     ?? ''),
       category:    String(row['VIEWCATEGORY'] ?? ''),
       description: String(row['DESCRIPTION']  ?? ''),
@@ -224,7 +187,6 @@ export class HanaRepository {
         AND ISACTIVE = 'true'`;
     const rows = await this.conn.exec(sql, categories) as Record<string, unknown>[];
     return rows.map(row => ({
-      id:          '',
       viewName:    String(row['VIEWNAME']     ?? ''),
       category:    String(row['VIEWCATEGORY'] ?? ''),
       description: String(row['VIEWDESC']     ?? ''),
@@ -236,7 +198,7 @@ export class HanaRepository {
       SELECT SOURCETERM, SOURCETERMALIAS, SOURCECONTEXT,
              TARGETTERM, TARGETTERMALIAS,
              SAPMODULE, SAPTRANSACTION, SAPOBJECTTYPE, SAPTECHNICALNAME,
-             CATEGORY, DOMAINAREA, PRIORITY, CONFIDENCE
+             CATEGORY, DOMAINAREA, PRIORITY, CONFIDENCE, LANGUAGE
       FROM "${this.cdsSchema}"."PWC_HAND_AI2REPORT_DEV_TERMINOLOGYMAPPING"
       WHERE STATUS = 'ACTIVE'`;
     const rows = await this.conn.exec(sql, []) as Record<string, unknown>[];
@@ -252,8 +214,9 @@ export class HanaRepository {
       sapTechnicalName: String(row['SAPTECHNICALNAME'] ?? ''),
       category:         String(row['CATEGORY']         ?? ''),
       domainArea:       String(row['DOMAINAREA']       ?? ''),
-      priority:         String(row['PRIORITY']         ?? ''),
-      confidence:       String(row['CONFIDENCE']       ?? ''),
+      priority:         row['PRIORITY']   != null ? Number(row['PRIORITY'])   : 0,
+      confidence:       row['CONFIDENCE'] != null ? Number(row['CONFIDENCE']) : 0,
+      language:         String(row['LANGUAGE']         ?? ''),
     }));
   }
 
@@ -285,6 +248,7 @@ export class HanaRepository {
             tableId:   tableName,
             dataType:  String(entry[4] ?? ''),
             fieldText: String(entry[2] ?? ''),
+            isKey:     Boolean(entry[1]),
           });
         }
       } catch {

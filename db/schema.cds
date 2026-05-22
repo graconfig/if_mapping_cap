@@ -25,33 +25,50 @@ context external {
   entity TerminologyMapping {
     key ID              : String(36);
         sourceTerm      : String(200);
-        sourceTermAlias : String(200);
-        sourceContext   : String(500);
+        sourceTermAlias : String(500);
+        sourceContext   : String(1000);
         targetTerm      : String(200);
-        targetTermAlias : String(200);
-        sapModule       : String(100);
-        sapTransaction  : String(100);
-        sapObjectType   : String(100);
-        sapTechnicalName: String(200);
-        category        : String(100);
-        domainArea      : String(100);
-        priority        : String(20);
-        confidence      : String(20);
+        targetTermAlias : String(500);
+        sapModule       : String(50);
+        sapTransaction  : String(20);
+        sapObjectType   : String(50);
+        sapTechnicalName: String(100);
+        category        : String(50);
+        domainArea      : String(50);
+        priority        : Integer;
+        confidence      : Decimal(3,2);
         status          : String(20);
+        language        : String(10);
   }
 
   @cds.persistence.exists
   entity CustomFields {
-    key ID          : String(36);
-        ifName      : String(200);
-        sourceTable : String(60);
-        sourceField : String(60);
-        sourceDesc  : String(500);
-        targetTable : String(60);
-        targetField : String(60);
-        targetDesc  : String(500);
-        notes       : String(1000);
-        isActive    : Integer;
+    key ID               : String(36);
+        scenario         : String(200);
+        ifName           : String(200);
+        sourceTable      : String(60);
+        sourceField      : String(60);
+        sourceDesc       : String(500);
+        sourceType       : String(30);
+        sourceLength     : Integer;
+        sourceDecimals   : Integer;
+        targetTable      : String(60);
+        targetField      : String(60);
+        targetDesc       : String(500);
+        targetType       : String(30);
+        targetLength     : Integer;
+        targetDecimals   : Integer;
+        keyFlag          : String(1);
+        obligatory       : String(1);
+        allowedValues    : String(500);
+        allowedValuesDesc: String(500);
+        class1           : String(100);
+        class2           : String(100);
+        class3           : String(100);
+        isAppend         : String(10);
+        notes            : String(1000);
+        color            : String(7);
+        isActive         : Integer;
   }
 }
 
@@ -100,16 +117,20 @@ type InterfaceFieldInput {
 
 type MatchedFieldResult {
     rowIndex    : Integer;
-    tableId     : String(60);
+    tableId     : String(200);
     fieldId     : String(60);
     dataType    : String(30);
     fieldText   : String(500);
     matchScore  : Decimal(5,4);
     matchSource : String(20);
-    notes       : String(1000);
+    notes       : String(2000);
     verified    : Boolean;
     obligatory  : String(1);
     sampleValue : String(500);
+    keyFlag     : String(1);
+    lengthTotal : String(10);
+    lengthDec   : String(10);
+    color       : String(7);
 }
 
 type CustomFieldUploadInput {

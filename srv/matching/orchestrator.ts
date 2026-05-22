@@ -74,6 +74,14 @@ export async function runMatching(
     terminologyText
   );
 
+  const inputByRow = new Map(fields.map(f => [f.rowIndex ?? 0, f]));
+  const manualFieldsText = step1Matched
+    .map(m => {
+      const f = inputByRow.get(m.rowIndex ?? 0);
+      return `${m.rowIndex}:${f?.fieldName ?? ''};${f?.fieldText ?? ''};;${f?.dataType ?? ''};${f?.tableId ?? ''};${f?.fieldId ?? ''};;${m.tableId};${m.fieldId}`;
+    })
+    .join('\n');
+
   const { matched: step3Matched } = await runStep3(
     step1Unmatched,
     selectedViews,
@@ -82,7 +90,8 @@ export async function runMatching(
     deps.prompts,
     config,
     correlationId,
-    terminologyText
+    terminologyText,
+    manualFieldsText
   );
 
   const allMatched: MatchedFieldResult[] = [...step1Matched, ...step3Matched];

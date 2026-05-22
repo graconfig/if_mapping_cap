@@ -26,12 +26,12 @@ function makeField(overrides: Partial<InterfaceFieldInput> = {}): InterfaceField
 }
 
 function makeScenario(category = 'Purchasing'): CdsView {
-  return { id: 'sc-1', viewName: 'Purchasing scenario', category, description: 'Purchasing desc', score: 0.9 };
+  return { ID: 'sc-1', viewName: 'Purchasing scenario', category, description: 'Purchasing desc', score: 0.9 };
 }
 
 function makeView(viewName: string, overrides: Partial<CdsView> = {}): CdsView {
   return {
-    id:          `id-${viewName}`,
+    ID:          `id-${viewName}`,
     viewName,
     category:    'Purchasing',
     description: `${viewName} description`,

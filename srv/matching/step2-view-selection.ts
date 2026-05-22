@@ -4,6 +4,7 @@ import type { PromptManager } from '../ai/prompt-manager.js';
 import type { HanaRepository } from '../repository/hana-repository.js';
 import type { RequestConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { trackTokens } from '../utils/token-tracker.js';
 
 export interface Step2Result {
   selectedViews: string[];
@@ -31,7 +32,7 @@ export async function runStep2(
     return { selectedViews: [] };
   }
 
-  const topCategory = scenarios[0].category;
+  const topCategory = scenarios[0].category ?? '';
 
   // Step 2: fetch views from CDSVIEWS filtered by category
   const candidateViews = await hana.getViewsByCategory(topCategory);
@@ -50,7 +51,7 @@ export async function runStep2(
       .map(f => Object.values(f).map(v => String(v ?? '')).join(','))
       .join('\n');
     const viewsText = candidateViews
-      .map(v => `${v.viewName},${v.description}`)
+      .map(v => `${v.viewName ?? ''},${v.description ?? ''}`)
       .join('\n');
 
     const userPrompt = fillTemplate(userTemplate, {
@@ -73,14 +74,21 @@ export async function runStep2(
       config.llmModel
     );
 
+    void trackTokens({
+      requestId:    correlationId ?? 'unknown',
+      provider:     config.provider as 'claude' | 'openai' | 'gemini',
+      step:         'view_selection',
+      inputTokens:  result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+    });
     const toolInput = result.toolInput as { relevant_view_names?: string[] };
-    selectedViews = (toolInput.relevant_view_names ?? []).slice(0, config.matchNumber);
+    selectedViews = (toolInput.relevant_view_names ?? []);
   } catch (err) {
     log.warn('Step2: LLM call failed, falling back to all candidates', {
       correlationId,
       error: String(err),
     });
-    selectedViews = candidateViews.slice(0, 20).map(v => v.viewName);
+    selectedViews = candidateViews.slice(0, 20).map(v => v.viewName ?? '');
   }
 
   log.info('Step2 complete', { correlationId, selectedViews: selectedViews.length });
