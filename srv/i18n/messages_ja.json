@@ -1,0 +1,12 @@
+{
+  "error.hana_connection": "HANA 接続に失敗しました",
+  "error.ai_core_auth": "AI Core 認証に失敗しました",
+  "error.ai_core_timeout": "AI Core リクエストがタイムアウトしました",
+  "error.invalid_provider": "不明な Provider: {p}",
+  "error.prompt_not_found": "ステップ \"{step}\" 言語 \"{lang}\" のアクティブなプロンプトが見つかりません",
+  "error.internal": "内部サーバーエラー",
+  "error.upload_failed": "アップロードに失敗しました",
+  "log.service_bootstrapped": "サービス起動完了",
+  "log.step1_complete": "Step1 完了",
+  "log.orchestrator_complete": "マッチング完了"
+}

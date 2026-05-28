@@ -1,0 +1,12 @@
+{
+  "error.hana_connection": "HANA 连接失败",
+  "error.ai_core_auth": "AI Core 认证失败",
+  "error.ai_core_timeout": "AI Core 请求超时",
+  "error.invalid_provider": "未知的 Provider: {p}",
+  "error.prompt_not_found": "未找到激活的 Prompt（step=\"{step}\" language=\"{lang}\"）",
+  "error.internal": "内部服务器错误",
+  "error.upload_failed": "上传失败",
+  "log.service_bootstrapped": "服务启动完成",
+  "log.step1_complete": "Step1 完成",
+  "log.orchestrator_complete": "匹配完成"
+}
