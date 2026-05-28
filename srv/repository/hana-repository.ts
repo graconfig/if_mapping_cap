@@ -258,38 +258,71 @@ export class HanaRepository {
     return result;
   }
 
+  private buildContent(r: CustomFieldRecord): string {
+    return [r.ifName, r.sourceTable, r.sourceField, r.sourceDesc]
+      .map(v => (v ?? '').trim())
+      .filter(Boolean)
+      .join(' ');
+  }
+
   async upsertCustomFields(records: CustomFieldRecord[]): Promise<UploadResult> {
+    const tbl = `"${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"`;
     let inserted = 0;
+    let updated  = 0;
     for (const r of records) {
-      await this.conn.exec(
-        `DELETE FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
-         WHERE UPPER(SOURCETABLE)=UPPER(?) AND UPPER(SOURCEFIELD)=UPPER(?)`,
-        [r.sourceTable, r.sourceField]
-      );
-      await this.conn.exec(
-        `INSERT INTO "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
-         (IFNAME,SOURCEDESC,SOURCETABLE,SOURCEFIELD,TARGETTABLE,TARGETFIELD,TARGETDESC,NOTES,ISACTIVE)
-         VALUES(?,?,?,?,?,?,?,?,1)`,
-        [r.ifName, r.sourceDesc, r.sourceTable, r.sourceField,
-         r.targetTable, r.targetField, r.targetDesc, r.notes]
-      );
-      inserted++;
+      const content = this.buildContent(r);
+      const st  = !r.sourceTable?.trim() ? `("SOURCETABLE" IS NULL OR "SOURCETABLE"='')` : `"SOURCETABLE"='${(r.sourceTable).replace(/'/g, "''")}'`;
+      const sf  = !r.sourceField?.trim() ? `("SOURCEFIELD" IS NULL OR "SOURCEFIELD"='')` : `"SOURCEFIELD"='${(r.sourceField).replace(/'/g, "''")}'`;
+      const ttb = (r.targetTable ?? '').replace(/'/g, "''");
+      const tf  = (r.targetField ?? '').replace(/'/g, "''");
+      const existing = await this.conn.exec(
+        `SELECT "ID" FROM ${tbl} WHERE ${st} AND ${sf} AND "TARGETTABLE"='${ttb}' AND "TARGETFIELD"='${tf}' AND "ISACTIVE"=0`,
+        []
+      ) as { ID: string }[];
+
+      if (existing.length > 0) {
+        const id = existing[0].ID;
+        await this.conn.exec(`DELETE FROM ${tbl} WHERE "ID"='${id.replace(/'/g, "''")}'`, []);
+        await this.conn.exec(
+          `INSERT INTO ${tbl}
+           ("ID","IFNAME","SOURCEDESC","SOURCETABLE","SOURCEFIELD",
+            "TARGETDESC","TARGETTABLE","TARGETFIELD","NOTES","COLOR","ISACTIVE","CONTENT")
+           VALUES('${id.replace(/'/g, "''")}',?,?,?,?,?,?,?,?,?,0,?)`,
+          [r.ifName ?? '', r.sourceDesc ?? '', r.sourceTable ?? '', r.sourceField ?? '',
+           r.targetDesc ?? '', r.targetTable ?? '', r.targetField ?? '',
+           r.notes ?? '', r.color ?? '', content]
+        );
+        updated++;
+      } else {
+        await this.conn.exec(
+          `INSERT INTO ${tbl}
+           ("ID","IFNAME","SOURCEDESC","SOURCETABLE","SOURCEFIELD",
+            "TARGETDESC","TARGETTABLE","TARGETFIELD","NOTES","COLOR","ISACTIVE","CONTENT")
+           VALUES(SYSUUID,?,?,?,?,?,?,?,?,?,0,?)`,
+          [r.ifName ?? '', r.sourceDesc ?? '', r.sourceTable ?? '', r.sourceField ?? '',
+           r.targetDesc ?? '', r.targetTable ?? '', r.targetField ?? '',
+           r.notes ?? '', r.color ?? '', content]
+        );
+        inserted++;
+      }
     }
-    return { inserted, updated: 0, deleted: 0 };
+    return { inserted, updated, deleted: 0 };
   }
 
   async overwriteCustomFields(records: CustomFieldRecord[]): Promise<UploadResult> {
-    await this.conn.exec(
-      `DELETE FROM "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS" WHERE ISACTIVE = 0`
-    );
+    const tbl = `"${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"`;
+    await this.conn.exec(`DELETE FROM ${tbl} WHERE "ISACTIVE"=0`, []);
     let inserted = 0;
     for (const r of records) {
+      const content = this.buildContent(r);
       await this.conn.exec(
-        `INSERT INTO "${this.custSchema}"."PWC_HAND_AI2REPORT_DEV_CUSTFIELDS"
-         (IFNAME,SOURCEDESC,SOURCETABLE,SOURCEFIELD,TARGETTABLE,TARGETFIELD,TARGETDESC,NOTES,ISACTIVE)
-         VALUES(?,?,?,?,?,?,?,?,1)`,
-        [r.ifName, r.sourceDesc, r.sourceTable, r.sourceField,
-         r.targetTable, r.targetField, r.targetDesc, r.notes]
+        `INSERT INTO ${tbl}
+         ("ID","IFNAME","SOURCEDESC","SOURCETABLE","SOURCEFIELD",
+          "TARGETDESC","TARGETTABLE","TARGETFIELD","NOTES","COLOR","ISACTIVE","CONTENT")
+         VALUES(SYSUUID,?,?,?,?,?,?,?,?,?,0,?)`,
+        [r.ifName ?? '', r.sourceDesc ?? '', r.sourceTable ?? '', r.sourceField ?? '',
+         r.targetDesc ?? '', r.targetTable ?? '', r.targetField ?? '',
+         r.notes ?? '', r.color ?? '', content]
       );
       inserted++;
     }

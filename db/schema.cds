@@ -142,6 +142,7 @@ type CustomFieldUploadInput {
     targetTable : String(60);
     targetField : String(60);
     notes       : String(1000);
+    color       : String(7);
 }
 
 type UploadResult {
