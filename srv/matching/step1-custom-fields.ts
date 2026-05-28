@@ -2,6 +2,7 @@ import { AiCoreClient } from '../ai/aicore-client.js';
 import type { CustomField, HanaRepository } from '../repository/hana-repository.js';
 import type { RequestConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { t } from '../utils/i18n.js';
 // Generated from schema.cds — run `npm run codegen` after schema changes
 import type { InterfaceFieldInput, MatchedFieldResult } from '../../@cds-models/index.js';
 
@@ -79,6 +80,6 @@ fields: InterfaceFieldInput[], hana: HanaRepository, aiCore: AiCoreClient, confi
     }
   }
 
-  log.info('Step1 complete', { correlationId, matched: matched.length, unmatched: stillUnmatched.length });
+  log.info(t('log.step1_complete', config.language), { correlationId, matched: matched.length, unmatched: stillUnmatched.length });
   return { matched, unmatched: stillUnmatched };
 }

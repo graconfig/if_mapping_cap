@@ -24,6 +24,7 @@ import type { PromptManager } from '../ai/prompt-manager.js';
 import type { HanaRepository } from '../repository/hana-repository.js';
 import type { RequestConfig } from '../utils/config.js';
 import { log } from '../utils/logger.js';
+import { t } from '../utils/i18n.js';
 import { runStep1 } from './step1-custom-fields.js';
 import { runStep2 } from './step2-view-selection.js';
 import { runStep3 } from './step3-field-matching.js';
@@ -55,7 +56,7 @@ export async function runMatching(
       const step4 = await runStep4(step1Matched, config, correlationId);
       results = step4.results;
     }
-    log.info('Orchestrator complete', { correlationId, total: results.length });
+    log.info(t('log.orchestrator_complete', config.language), { correlationId, total: results.length });
     return results.slice().sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
   }
 
@@ -102,6 +103,6 @@ export async function runMatching(
     results = step4.results;
   }
 
-  log.info('Orchestrator complete', { correlationId, total: results.length });
+  log.info(t('log.orchestrator_complete', config.language), { correlationId, total: results.length });
   return results.slice().sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
 }

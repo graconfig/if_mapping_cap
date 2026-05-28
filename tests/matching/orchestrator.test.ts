@@ -117,7 +117,7 @@ test('full pipeline â€” step1 matches some, step2+3 match rest, step4 verifies â
   expect(result.every(r => r.verified)).toBe(true);
 
   expect(log.info).toHaveBeenCalledWith(
-    'Orchestrator complete',
+    expect.any(String),
     expect.objectContaining({ correlationId: 'corr-full', total: 3 })
   );
 });

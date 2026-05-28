@@ -230,7 +230,7 @@ test('correlationId is forwarded to logger', async () => {
   await runStep1([field], hana as any, noopAi, defaultConfig, 'corr-123');
 
   expect(log.info).toHaveBeenCalledWith(
-    'Step1 complete',
+    expect.stringContaining('Step1'),
     expect.objectContaining({ correlationId: 'corr-123' })
   );
 });
