@@ -7,6 +7,7 @@ import { runMatching, OrchestratorDeps } from './matching/orchestrator.js';
 import type { InterfaceFieldInput } from '../@cds-models/index.js';
 import { buildRequestConfig } from './utils/config.js';
 import { AppError } from './utils/errors.js';
+import { t } from './utils/i18n.js';
 import { log } from './utils/logger.js';
 import { logBus } from './utils/log-bus.js';
 import type { LogEntry } from './utils/log-bus.js';
@@ -47,7 +48,7 @@ module.exports = class IfMappingService extends cds.ApplicationService {
     await super.init();
     await hana.connect();
     await promptManager.initialize();
-    log.info('Service bootstrapped');
+    log.info(t('log.service_bootstrapped', 'ja'));
 
     this.on('match', async (req) => {
       const { fields, provider, language } = req.data as {
@@ -66,7 +67,7 @@ module.exports = class IfMappingService extends cds.ApplicationService {
         if (err instanceof AppError) {
           return req.error(err.statusCode, err.message);
         }
-        return req.error(500, 'Internal server error');
+        return req.error(500, t('error.internal', config.language));
       }
     });
 
@@ -82,7 +83,7 @@ module.exports = class IfMappingService extends cds.ApplicationService {
         return result;
       } catch (err) {
         log.error('uploadCustomFields failed', { error: String(err) });
-        return req.error(500, 'Upload failed');
+        return req.error(500, t('error.upload_failed', 'ja'));
       }
     });
 
