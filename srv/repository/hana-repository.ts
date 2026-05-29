@@ -18,6 +18,17 @@ export type CustomFieldRecord  = _CdsCustomFieldUploadInput;
 export type UploadResult       = _CdsUploadResult;
 
 function resolveHanaConfig(): Record<string, unknown> {
+  // Explicit env vars take priority — allows using a privileged user on BTP
+  // even when VCAP_SERVICES is present (HDI RT user lacks cross-schema access)
+  if (process.env.HANA_USER && process.env.HANA_ADDRESS) {
+    return {
+      serverNode:             `${process.env.HANA_ADDRESS}:${process.env.HANA_PORT ?? '443'}`,
+      uid:                    process.env.HANA_USER,
+      pwd:                    process.env.HANA_PASSWORD,
+      encrypt:                true,
+      sslValidateCertificate: false,
+    };
+  }
   if (process.env.VCAP_SERVICES) {
     const vcap = JSON.parse(process.env.VCAP_SERVICES);
     const binding =

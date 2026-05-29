@@ -1,0 +1,69 @@
+_schema-version: 3.3.0
+ID: if-mapping-cap
+version: 0.1.0
+description: "SAP interface field mapping service built with CAP Node.js/TypeScript"
+parameters:
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production
+modules:
+  - name: if-mapping-cap-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      instances: 1
+      buildpack: nodejs_buildpack
+    build-parameters:
+      builder: npm-ci
+    properties:
+      # HANA Cloud connection — use a user with SELECT on the external schema
+      HANA_ADDRESS: <your-hana-host>.hana.prod-<region>.hanacloud.ondemand.com
+      HANA_PORT: "443"
+      HANA_USER: <SCHEMA_PREFIX>_<SUFFIX>_RT
+      HANA_PASSWORD: <hana-password>
+      HANA_SCHEMA: <SCHEMA_NAME>
+      HANA_SCHEMA_CUST: <SCHEMA_NAME>
+      # SAP AI Core
+      AICORE_AUTH_URL: https://<subdomain>.authentication.<region>.hana.ondemand.com
+      AICORE_CLIENT_ID: <aicore-client-id>
+      AICORE_CLIENT_SECRET: <aicore-client-secret>
+      AICORE_BASE_URL: https://api.ai.prod.<region>.aws.ml.hana.ondemand.com/v2
+      AICORE_RESOURCE_GROUP: default
+      # LLM model names (optional — defaults are used if omitted)
+      CLAUDE_LLM_MODEL: anthropic--claude-4.6-sonnet
+      GEMINI_LLM_MODEL: gemini-2.5-pro
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+    requires:
+      - name: if-mapping-cap-db
+      - name: if-mapping-cap-auth
+
+  - name: if-mapping-cap-db-deployer
+    type: hdb
+    path: gen/db
+    parameters:
+      buildpack: nodejs_buildpack
+    requires:
+      - name: if-mapping-cap-db
+
+resources:
+  - name: if-mapping-cap-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+  - name: if-mapping-cap-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: xsuaa
+      service-plan: application
+      path: ./xs-security.json
+      config:
+        xsappname: if-mapping-cap-${space}
+        tenant-mode: dedicated
