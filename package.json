@@ -53,7 +53,10 @@
       "native_hana_associations": false
     },
     "requires": {
-      "auth": "xsuaa"
+      "auth": "xsuaa",
+      "[development]": {
+        "auth": "dummy"
+      }
     }
   }
 }
