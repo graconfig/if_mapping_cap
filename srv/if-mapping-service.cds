@@ -24,8 +24,8 @@ service IfMappingService @(path: '/if-mapping') {
   ) returns UploadResult;
 
   // Read-only lookups for debugging / admin
-  @readonly entity CdsViews   as projection on external.CdsViews;
-  @readonly entity ViewFields as projection on external.ViewFields;
+  @readonly @cds.persistence.skip entity CdsViews   as projection on external.CdsViews;
+  @readonly @cds.persistence.skip entity ViewFields as projection on external.ViewFields;
 
   // Prompt template management (full CRUD)
   entity PromptTemplates as projection on db_PromptTemplates;

@@ -1,0 +1,52 @@
+_schema-version: 3.3.0
+ID: if-mapping-cap
+version: 0.1.0
+description: "SAP interface field mapping service built with CAP Node.js&#x2F;TypeScript"
+parameters:
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production
+modules:
+  - name: if-mapping-cap-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      instances: 1
+      buildpack: nodejs_buildpack
+    build-parameters:
+      builder: npm-ci
+    provides:
+      - name: srv-api # required by consumers of CAP services (e.g. approuter)
+        properties:
+          srv-url: ${default-url}
+    requires:
+      - name: if-mapping-cap-db
+      - name: if-mapping-cap-auth
+
+  - name: if-mapping-cap-db-deployer
+    type: hdb
+    path: gen/db
+    parameters:
+      buildpack: nodejs_buildpack
+    requires:
+      - name: if-mapping-cap-db
+
+resources:
+  - name: if-mapping-cap-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+  - name: if-mapping-cap-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: xsuaa
+      service-plan: application
+      path: ./xs-security.json
+      config:
+        xsappname: if-mapping-cap-${space}
+        tenant-mode: dedicated

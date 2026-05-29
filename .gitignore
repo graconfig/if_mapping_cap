@@ -14,3 +14,5 @@ docs
 db.sqlite
 CLAUDE.md
 .claude
+# added by cds
+.cdsrc-private.json
